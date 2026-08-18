@@ -1,0 +1,19 @@
+# Render Blueprint. Point Render at this repository and it provisions the
+# service described here, so nothing has to be typed into the dashboard.
+services:
+  - type: web
+    name: unifind
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
+    envVars:
+      # Marks the session cookie Secure. Render terminates HTTPS, so this is safe.
+      - key: UNIFIND_ENV
+        value: production
+      # Render generates a strong random value and keeps it out of the repo.
+      - key: UNIFIND_SECRET_KEY
+        generateValue: true
+      # The free plan has an ephemeral disk, so restore the demo data each boot.
+      - key: UNIFIND_SEED_ON_START
+        value: "true"

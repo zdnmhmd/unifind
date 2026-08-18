@@ -1,0 +1,371 @@
+# UniFind
+
+The private Lost &amp; Found network for **United International University (UIU)**.
+
+UIU students, faculty, and staff report lost or found belongings, search existing
+reports, see rule-based Smart Match suggestions, message each other privately,
+submit ownership claims, and close a case once an item is back with its owner.
+
+**Stack:** React (Vite + TypeScript) → FastAPI (Python) → SQLite
+
+---
+
+## 1. What you need installed
+
+| Tool | Version | Check with |
+| --- | --- | --- |
+| Python | 3.10 or newer | `py --version` |
+| Node.js | 18 or newer | `node --version` |
+
+---
+
+## 2. Run it (first time)
+
+You need **two terminals** — one for the backend, one for the frontend.
+
+### Terminal 1 — backend (FastAPI + SQLite)
+
+Run these in order, from the project root:
+
+```bash
+cd backend
+```
+
+```bash
+py -3.12 -m venv venv
+```
+
+```bash
+venv\Scripts\python.exe -m pip install -r requirements.txt
+```
+
+```bash
+venv\Scripts\python.exe seed.py
+```
+
+```bash
+venv\Scripts\python.exe -m uvicorn main:app --reload --port 8000
+```
+
+The API is now on **http://127.0.0.1:8000**, with interactive docs at
+**http://127.0.0.1:8000/docs**.
+
+> On macOS or Linux, use `python3 -m venv venv` and `venv/bin/python` instead.
+
+### Terminal 2 — frontend (React)
+
+From the project root:
+
+```bash
+npm install
+```
+
+```bash
+npm run dev
+```
+
+Open **http://localhost:5173**.
+
+Vite proxies `/api` and `/uploads` to the backend, so both run on one origin in
+the browser and no CORS setup is needed.
+
+## 3. Run it (every time after that)
+
+```bash
+cd backend && venv\Scripts\python.exe -m uvicorn main:app --reload --port 8000
+```
+
+```bash
+npm run dev
+```
+
+---
+
+## 4. Demo accounts
+
+`seed.py` creates four accounts. The password for all of them is **`UniFind2026`**.
+
+| Email | Role |
+| --- | --- |
+| `ayesha@bscse.uiu.ac.bd` | member |
+| `tanvir@eee.uiu.ac.bd` | member |
+| `nusrat@bba.uiu.ac.bd` | member |
+| `admin@uiu.ac.bd` | **administrator** |
+
+It also creates six items, including a lost/found pair that produces a
+high-confidence Smart Match you can show immediately.
+
+To start over with a clean database, delete `backend/unifind.db` and run
+`seed.py` again.
+
+---
+
+## 5. Project structure
+
+```
+unifind/
+├── backend/                  FastAPI + SQLite
+│   ├── main.py               App entry point, routers, CORS, /uploads
+│   ├── database.py           SQLite engine, session, get_db dependency
+│   ├── models.py             Tables: User, Item, Claim, ItemMatch, Comment,
+│   │                         Conversation, Message, Notification, ContentReport
+│   ├── schemas.py            Pydantic validation + the UIU email rule
+│   ├── auth.py               bcrypt hashing, JWT session cookie, route guards
+│   ├── matching.py           Rule-based Smart Match scoring
+│   ├── helpers.py            Item serialisation + notification helper
+│   ├── seed.py               Demo accounts and items
+│   ├── routers/
+│   │   ├── auth.py           register / login / logout / me
+│   │   ├── items.py          Report, browse, search, filter, edit, status, upload
+│   │   ├── claims.py         Submit, list, approve/reject
+│   │   ├── comments.py       Community comment threads
+│   │   ├── matches.py        Smart Match results
+│   │   ├── messages.py       Conversations and messages
+│   │   ├── notifications.py  In-app notifications
+│   │   ├── dashboard.py      Dashboard, public stats, content flagging
+│   │   └── admin.py          Admin stats, post moderation, users
+│   └── unifind.db            Created on first run (git-ignored)
+│
+└── client/                   React frontend
+    └── src/
+        ├── components/
+        │   ├── common/       Navbar, Footer, ProtectedRoute, AdminRoute,
+        │   │                 SearchBar, FilterPanel, StatusBadge, ImageUploader,
+        │   │                 Modal, ConfirmModal, PageHeader, Panel, StatCard,
+        │   │                 LoadingSpinner, EmptyState, ErrorMessage
+        │   ├── items/        ItemCard, ItemForm
+        │   ├── claims/       ClaimModal
+        │   ├── matches/      MatchCard
+        │   └── messages/     MessageBubble, CommentRow
+        ├── layouts/          PublicLayout, MainLayout, AdminLayout
+        ├── pages/            One file per route (+ pages/admin/)
+        ├── services/         api, auth, item, claim, comment, match,
+        │                     message, notification, admin
+        ├── context/          AuthContext
+        ├── hooks/            useApi, useDebounced
+        ├── types.ts          API response shapes
+        ├── constants.ts      Categories, locations, UIU email rule, formatters
+        └── index.css         The complete design system
+```
+
+---
+
+## 6. Routes
+
+### Public
+| Route | Page |
+| --- | --- |
+| `/` | Home |
+| `/login` | Sign in |
+| `/register` | Create account |
+
+### Authenticated UIU members
+| Route | Page |
+| --- | --- |
+| `/dashboard` | Dashboard |
+| `/browse` | Browse lost &amp; found items |
+| `/items/:id` | Item details |
+| `/items/:id/edit` | Edit own post |
+| `/report/lost` | Report lost item |
+| `/report/found` | Report found item |
+| `/my-posts` | My posts |
+| `/matches` | Possible matches |
+| `/claims` | Claims |
+| `/messages` | Message inbox |
+| `/messages/:id` | Conversation |
+| `/notifications` | Notifications |
+| `/resolved` | Resolved gallery |
+| `/profile` | Profile |
+
+### Administrators
+| Route | Page |
+| --- | --- |
+| `/admin` | Admin dashboard |
+| `/admin/posts` | Manage posts |
+| `/admin/reports` | Moderation queue |
+| `/admin/users` | User administration |
+
+Anything else renders the 404 page.
+
+---
+
+## 7. API
+
+Full interactive documentation: **http://127.0.0.1:8000/docs**
+
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| POST | `/api/auth/register` | Create an account (UIU email required) |
+| POST | `/api/auth/login` | Sign in |
+| POST | `/api/auth/logout` | Sign out |
+| GET | `/api/auth/me` | Current member |
+| GET | `/api/items` | Browse — supports `search`, `type`, `category`, `location`, `status`, `mine`, `sort` |
+| GET | `/api/items/{id}` | Item details |
+| POST | `/api/items` | Report an item |
+| PUT | `/api/items/{id}` | Edit own item |
+| PATCH | `/api/items/{id}/status` | Change case status |
+| DELETE | `/api/items/{id}` | Withdraw own item |
+| POST | `/api/items/upload` | Upload one photo, returns its URL |
+| GET/POST | `/api/items/{id}/comments` | Community comments |
+| POST | `/api/items/{id}/claims` | Submit an ownership claim |
+| GET | `/api/claims` | Claims received and submitted |
+| PATCH | `/api/claims/{id}` | Approve or reject a claim |
+| GET | `/api/matches` | Smart Match suggestions |
+| GET/POST | `/api/conversations` | Inbox / start a conversation |
+| GET | `/api/conversations/{id}` | One thread |
+| POST | `/api/conversations/{id}/messages` | Send a message |
+| GET | `/api/notifications` | Notifications |
+| PATCH | `/api/notifications/{id}/read` | Mark one read |
+| PATCH | `/api/notifications/read-all` | Mark all read |
+| GET | `/api/dashboard` | Dashboard summary |
+| GET | `/api/stats` | Anonymous counters for the public Home page |
+| POST | `/api/reports` | Flag content for moderation |
+| GET | `/api/admin/stats` | Admin statistics |
+| GET | `/api/admin/posts` | All posts, including removed ones |
+| PATCH | `/api/admin/posts/{id}/remove` · `/restore` | Moderate a post |
+| GET | `/api/admin/reports` | Moderation queue |
+| PATCH | `/api/admin/reports/{id}` | Review a report |
+| GET | `/api/admin/users` | Registered members |
+| PATCH | `/api/admin/users/{id}` | Suspend or reinstate |
+
+---
+
+## 8. How Smart Matching works
+
+When a **lost** item is reported, it is compared against every open/pending
+**found** item (and vice versa). Scores come from `backend/matching.py`:
+
+| Signal | Points |
+| --- | --- |
+| Same category | +30 |
+| Similar title (shared word of 3+ letters) | +25 |
+| Same location | +20 |
+| Same colour | +15 |
+| Same brand | +10 |
+| Reported within 3 days of each other | +10 |
+| Shared description keyword | +5 |
+
+Pairs scoring **40 or more** are stored and shown on `/matches`. The score is
+capped at **99** so the interface can never claim certainty — it always reads
+*possible match*, and the member verifies ownership through a claim.
+
+Matches are recalculated whenever an item is created, edited, or has its status
+changed, and a resolved or withdrawn item drops out of matching entirely.
+
+---
+
+## 9. Security and validation
+
+- Passwords are hashed with **bcrypt**. Plain text is never stored, and the hash
+  is never returned by the API.
+- The session is a **JWT in an httpOnly cookie**, so page JavaScript cannot read
+  it.
+- The **UIU email rule** (`*.uiu.ac.bd`, any department subdomain) is enforced in
+  `backend/schemas.py` on registration and re-checked on every request in
+  `backend/auth.py`. The React forms check it too, but only for fast feedback —
+  the backend never trusts the frontend.
+- Listings are private: every item, claim, match, message, comment, and
+  notification route requires a signed-in member.
+- A member can only edit, delete, or change the status of **their own** posts,
+  and only the poster can approve or reject a claim on their item.
+- `/api/admin/*` requires the `admin` role, checked server-side. The
+  `AdminRoute` guard in React is convenience only.
+- `identifying_details` — the private proof used during a claim — is stripped
+  from API responses for everyone except the member who posted the item.
+- Conversations are readable only by their two participants.
+- Queries go through SQLAlchemy with bound parameters, so search input cannot
+  inject SQL.
+- Uploaded filenames are generated server-side, so a crafted name cannot escape
+  the upload directory.
+
+---
+
+## 10. Configuration
+
+Backend settings are environment variables. Copy `backend/.env.example` to
+`backend/.env` to change them — every one has a working development default, so
+`.env` is optional locally.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `UNIFIND_SECRET_KEY` | dev fallback | Signs the session cookie. **Must be set in production.** |
+| `UNIFIND_ENV` | `development` | Set to `production` to mark the cookie `Secure` (requires HTTPS). |
+| `UNIFIND_UPLOAD_DIR` | `backend/uploads/` | Where item photos are written. |
+| `UNIFIND_ALLOWED_ORIGINS` | — | Extra browser origins allowed to call the API. |
+
+**Note on image storage:** photos are written to `backend/uploads/`, which is
+git-ignored so member uploads are never committed. For a real deployment, either
+point `UNIFIND_UPLOAD_DIR` at a mounted volume outside the project, or replace
+the `upload_photo` handler in `backend/routers/items.py` with a call to an image bucket
+(S3 / Cloudinary) — SQLite already stores only the URL, so nothing else changes.
+
+---
+
+## 11. Faculty demonstration flow
+
+1. Start both servers (section 2).
+2. Sign in as `ayesha@bscse.uiu.ac.bd` / `UniFind2026`.
+3. Open **Report lost item**.
+4. Submit: *Samsung Galaxy S24* · Electronics · Black · Main Library · a description.
+5. The success screen confirms it saved, and shows any possible matches found.
+6. Open **Browse** — the new Samsung phone is there.
+7. Search `Samsung`, then filter **Electronics** + **Lost**.
+8. Open the item's details page.
+9. Sign in as `tanvir@eee.uiu.ac.bd` in a second browser or private window and
+   submit a **claim** — the case moves `OPEN → PENDING`.
+10. Back as Ayesha, approve the claim and mark the case **RESOLVED**.
+11. Open **Matches** to show the rule-based Smart Match with its evidence table.
+12. Sign in as `admin@uiu.ac.bd` and open `/admin`.
+
+This proves the full round trip: **React → FastAPI → SQLite → FastAPI → React**.
+
+---
+
+## 12. Feature status
+
+**Working end-to-end (React → FastAPI → SQLite):**
+
+| Feature | Status |
+| --- | --- |
+| **Feature 1** — Lost/Found item reporting | Complete, with photo upload |
+| **Feature 2** — Browse, search, filter, sort | Complete |
+| **Feature 3** — Claims &amp; status tracking (`OPEN → PENDING → RESOLVED`) | Complete |
+| Smart Matching | Complete (rule-based) |
+| Comments | Complete |
+| Private messaging | Complete |
+| Notifications | Complete |
+| Resolved gallery | Complete |
+| Admin dashboard &amp; moderation | Complete |
+
+Authentication, registration, and user accounts are required system
+functionality — they are deliberately **not** counted as one of the numbered
+project features.
+
+**Frontend:** every route in section 6 is built and connected to live data.
+
+---
+
+## 13. Verifying the API
+
+`backend/smoke_test.ps1` exercises the whole API against a running backend — the
+UIU email rule, protected routes, the report → browse → search → claim →
+resolve flow, Smart Matching, ownership rules, privacy of identifying details
+and conversations, and admin moderation. 51 checks.
+
+With the backend running, from PowerShell:
+
+```bash
+powershell -File backend/smoke_test.ps1
+```
+
+It writes test data into `unifind.db`. To get back to clean demo data, stop the
+backend, delete `backend/unifind.db`, and run `seed.py` again.
+
+---
+
+## 14. Notes
+
+- `_legacy/` holds the previous TypeScript/tRPC/Drizzle implementation, kept for
+  reference only. Nothing in the running app imports it, and it can be deleted.
+- There is no campus map, and no latitude/longitude fields. Location is
+  structured — a known campus place, or free text when "Other" is chosen.
