@@ -17,3 +17,15 @@ services:
       # The free plan has an ephemeral disk, so restore the demo data each boot.
       - key: UNIFIND_SEED_ON_START
         value: "true"
+      # Email confirmation. Without a mail server the backend still issues codes,
+      # but nobody can read them (it logs a warning instead), so set these before
+      # inviting real members. Leave them unset and the seeded demo accounts —
+      # which are created already confirmed — still work.
+      # - key: UNIFIND_SMTP_HOST
+      #   value: smtp.gmail.com
+      # - key: UNIFIND_SMTP_PORT
+      #   value: "587"
+      # - key: UNIFIND_SMTP_USER
+      #   sync: false
+      # - key: UNIFIND_SMTP_PASSWORD
+      #   sync: false

@@ -7,7 +7,7 @@ general social platform, so there is no liking, following, or resharing here.
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
-from auth import get_current_user
+from auth import get_current_user, get_verified_user
 from database import get_db
 from helpers import create_notification
 from models import Comment, User
@@ -53,7 +53,7 @@ def list_comments(
 def create_comment(
     item_id: int,
     payload: CommentCreate,
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_verified_user),
     db: Session = Depends(get_db),
 ):
     item = _get_item_or_404(db, item_id)

@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, 
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from auth import get_current_user
+from auth import get_current_user, get_verified_user
 from database import get_db
 from helpers import create_notification, serialize_item
 from matching import refresh_matches_for_item
@@ -137,7 +137,7 @@ def get_item(
 @router.post("", response_model=ItemCreateResponse, status_code=status.HTTP_201_CREATED)
 def create_item(
     payload: ItemCreate,
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_verified_user),
     db: Session = Depends(get_db),
 ):
     item = Item(owner_id=user.id, **payload.model_dump())
@@ -166,7 +166,7 @@ def create_item(
 @router.post("/upload", response_model=UploadResponse)
 async def upload_photo(
     file: UploadFile = File(...),
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_verified_user),
 ):
     """Store one item photo and return the URL to save on the item record."""
     extension = ALLOWED_IMAGE_TYPES.get(file.content_type or "")
@@ -201,7 +201,7 @@ async def upload_photo(
 def update_item(
     item_id: int,
     payload: ItemUpdate,
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_verified_user),
     db: Session = Depends(get_db),
 ):
     """Edit an existing post. Only the fields present in the body are changed."""

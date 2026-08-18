@@ -1,5 +1,5 @@
 import { Link, NavLink, Outlet } from "react-router-dom";
-import { FileWarning, LayoutDashboard, Package, Users } from "lucide-react";
+import { FileWarning, LayoutDashboard, MailWarning, Package, Users } from "lucide-react";
 import { Navbar } from "@/components/common/Navbar";
 import { Footer } from "@/components/common/Footer";
 import { Logo } from "@/components/common/Logo";
@@ -40,11 +40,36 @@ export function PublicLayout() {
   );
 }
 
+/**
+ * Reminder shown on every member page until the UIU address is confirmed.
+ *
+ * The soft gate is only fair if the member can see why posting is refused
+ * before they try it.
+ */
+function VerifyBanner() {
+  const { user } = useAuth();
+  if (!user || user.is_verified) return null;
+
+  return (
+    <div className="verify-banner">
+      <MailWarning size={17} />
+      <p>
+        <strong>Confirm your UIU email</strong> to report items and submit claims. We sent a
+        six-digit code to {user.email}.
+      </p>
+      <Link to="/verify" className="btn btn-primary btn-sm">
+        Enter code
+      </Link>
+    </div>
+  );
+}
+
 /** Every authenticated member page. */
 export function MainLayout() {
   return (
     <div className="app-shell">
       <Navbar />
+      <VerifyBanner />
       <main className="app-main">
         <Outlet />
       </main>

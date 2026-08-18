@@ -17,6 +17,7 @@ import { Notifications } from "@/pages/Notifications";
 import { Resolved } from "@/pages/Resolved";
 import { Profile } from "@/pages/Profile";
 import { NotFound } from "@/pages/NotFound";
+import { Verify } from "@/pages/Verify";
 
 import { AdminDashboard } from "@/pages/admin/AdminDashboard";
 import { ManagePosts } from "@/pages/admin/ManagePosts";
@@ -36,6 +37,10 @@ export default function App() {
 
       {/* Authenticated UIU members. */}
       <Route element={<ProtectedRoute />}>
+        {/* Email confirmation stands on its own: signed in, but not yet
+            confirmed, so it deliberately skips the member chrome. */}
+        <Route path="/verify" element={<Verify />} />
+
         <Route element={<MainLayout />}>
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/browse" element={<Browse />} />

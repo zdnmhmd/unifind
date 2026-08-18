@@ -185,6 +185,50 @@ Invoke-RestMethod "$base/api/auth/logout" -Method Post -WebSession $s | Out-Null
 try { Invoke-RestMethod "$base/api/auth/me" -WebSession $s | Out-Null; Check "logout invalidates session" $false "still signed in!" }
 catch { Check "logout invalidates session" ($_.Exception.Response.StatusCode.value__ -eq 401) }
 
+Write-Host "`n== 17. Email confirmation + the soft gate (spec s5) =="
+$vEmail = "verify$(Get-Random -Max 99999)@bscse.uiu.ac.bd"
+$sv = $null
+$vUser = Invoke-RestMethod "$base/api/auth/register" -Method Post -ContentType application/json `
+  -Body (@{name="Verify Student";email=$vEmail;password="Password123"} | ConvertTo-Json) `
+  -SessionVariable sv
+Check "new member starts unconfirmed" ($vUser.is_verified -eq $false)
+
+# Development builds return the code so this runs with no SMTP server.
+$code = $vUser.verification.dev_code
+Check "registration issues a six-digit code" ($code -match '^\d{6}$')
+
+# Soft gate: reading stays open, writing does not.
+$browse = Invoke-RestMethod "$base/api/items" -WebSession $sv
+Check "unconfirmed member can still browse" ($browse.Count -gt 0)
+
+$vBody = @{
+  type="lost"; title="Unconfirmed test item"; category="Other"
+  description="This post must be refused until the email is confirmed."
+  location="Cafeteria"; date_lost_found="2026-08-16T00:00:00Z"
+} | ConvertTo-Json
+try {
+  Invoke-RestMethod "$base/api/items" -Method Post -ContentType application/json -Body $vBody -WebSession $sv | Out-Null
+  Check "unconfirmed member cannot post" $false "the post was accepted!"
+} catch { Check "unconfirmed member cannot post" ($_.Exception.Response.StatusCode.value__ -eq 403) }
+
+try {
+  Invoke-RestMethod "$base/api/auth/verify" -Method Post -ContentType application/json `
+    -Body (@{code="000000"} | ConvertTo-Json) -WebSession $sv | Out-Null
+  Check "a wrong code is rejected" $false "it was accepted!"
+} catch { Check "a wrong code is rejected" ($_.Exception.Response.StatusCode.value__ -eq 400) }
+
+try {
+  Invoke-RestMethod "$base/api/auth/resend" -Method Post -WebSession $sv | Out-Null
+  Check "resend is rate limited" $false "no cooldown!"
+} catch { Check "resend is rate limited" ($_.Exception.Response.StatusCode.value__ -eq 429) }
+
+$confirmed = Invoke-RestMethod "$base/api/auth/verify" -Method Post -ContentType application/json `
+  -Body (@{code=$code} | ConvertTo-Json) -WebSession $sv
+Check "the correct code confirms the account" ($confirmed.user.is_verified -eq $true)
+
+$vItem = Invoke-RestMethod "$base/api/items" -Method Post -ContentType application/json -Body $vBody -WebSession $sv
+Check "confirmed member can post" ($vItem.item.id -gt 0)
+
 Write-Host "`n========================================"
 Write-Host "  PASSED: $pass    FAILED: $fail"
 Write-Host "========================================"

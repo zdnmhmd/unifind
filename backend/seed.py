@@ -77,12 +77,21 @@ def main() -> None:
                     password_hash=hash_password(DEMO_PASSWORD),
                     department=department,
                     role=role,
+                    # Demo accounts skip the confirmation step, so the faculty
+                    # demonstration never depends on reaching an inbox.
+                    is_verified=True,
+                    verified_at=datetime.now(timezone.utc),
                 )
                 db.add(user)
                 db.commit()
                 db.refresh(user)
                 print(f"  created user  {email}")
             else:
+                # Backfill for databases seeded before email confirmation existed.
+                if not user.is_verified:
+                    user.is_verified = True
+                    user.verified_at = datetime.now(timezone.utc)
+                    db.commit()
                 print(f"  user exists   {email}")
             users_by_email[email] = user
 

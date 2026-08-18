@@ -1,11 +1,12 @@
 import { useState, type FormEvent } from "react";
-import { Link, Navigate, useNavigate } from "react-router-dom";
+import { Link, Navigate } from "react-router-dom";
 import { ArrowRight, Lock } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/context/AuthContext";
 import { FieldError } from "@/components/common/Feedback";
 import { Logo } from "@/components/common/Logo";
 import { isUiuEmail, UIU_EMAIL_ERROR } from "@/constants";
+import type { Verification } from "@/types";
 
 type Errors = {
   name?: string;
@@ -17,7 +18,6 @@ type Errors = {
 
 export function Register() {
   const { user, register } = useAuth();
-  const navigate = useNavigate();
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -26,8 +26,15 @@ export function Register() {
   const [confirm, setConfirm] = useState("");
   const [errors, setErrors] = useState<Errors>({});
   const [submitting, setSubmitting] = useState(false);
+  const [verification, setVerification] = useState<Verification | null>(null);
 
-  if (user) return <Navigate to="/dashboard" replace />;
+  // Redirecting by render rather than by navigate(): registering signs the
+  // member in, and the `user` guard below would otherwise win the race and drop
+  // them on the dashboard with the confirmation step skipped.
+  if (verification) return <Navigate to="/verify" replace state={{ verification }} />;
+
+  // An unconfirmed member who comes back to /register belongs on the code screen.
+  if (user) return <Navigate to={user.is_verified ? "/dashboard" : "/verify"} replace />;
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -44,14 +51,16 @@ export function Register() {
 
     setSubmitting(true);
     try {
-      await register({
+      const created = await register({
         name: name.trim(),
         email: email.trim(),
         password,
         department: department.trim() || undefined,
       });
-      toast.success("Account created. Welcome to UniFind.");
-      navigate("/dashboard", { replace: true });
+      toast.success("Account created. Confirm your UIU email to finish.");
+      // Handed to the confirmation screen in router state, so it does not have
+      // to ask the server for the details again.
+      setVerification(created.verification);
     } catch (error) {
       setErrors({ form: (error as Error).message });
     } finally {

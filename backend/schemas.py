@@ -71,7 +71,46 @@ class UserOut(BaseModel):
     email: str
     department: str | None
     role: str
+    is_verified: bool
     created_at: datetime
+
+
+class VerificationOut(BaseModel):
+    """What the frontend needs to render the confirmation screen."""
+
+    # False when no SMTP server is configured — the code went to the console.
+    sent: bool
+    email: str
+    expires_in_minutes: int
+    # Development only, and never populated when UNIFIND_ENV=production. Lets the
+    # demo run end to end without an SMTP server.
+    dev_code: str | None = None
+
+
+class RegisterResponse(UserOut):
+    verification: VerificationOut
+
+
+class VerifyCodeRequest(BaseModel):
+    code: str
+
+    @field_validator("code")
+    @classmethod
+    def must_be_six_digits(cls, value: str) -> str:
+        """Six digits only, so a malformed code never reaches bcrypt.
+
+        Spaces and dashes are stripped first — people paste "123 456" straight
+        out of the email. The message is written for a student, not a validator.
+        """
+        cleaned = value.replace(" ", "").replace("-", "").strip()
+        if not re.fullmatch(r"\d{6}", cleaned):
+            raise ValueError("Enter the six-digit code from your email.")
+        return cleaned
+
+
+class VerifyCodeResponse(BaseModel):
+    user: UserOut
+    message: str
 
 
 # ---------------------------------------------------------------------------

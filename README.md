@@ -92,11 +92,20 @@ npm run dev
 | `nusrat@bba.uiu.ac.bd` | member |
 | `admin@uiu.ac.bd` | **administrator** |
 
-It also creates six items, including a lost/found pair that produces a
+All four are created already confirmed, so the demonstration never waits on an
+inbox. It also creates six items, including a lost/found pair that produces a
 high-confidence Smart Match you can show immediately.
 
 To start over with a clean database, delete `backend/unifind.db` and run
 `seed.py` again.
+
+> **Upgrading a database made before email confirmation existed?** New tables
+> are created automatically, but SQLite will not add the two new `users`
+> columns on its own. Either delete `unifind.db` and re-seed, or run once:
+>
+> ```bash
+> sqlite3 backend/unifind.db "ALTER TABLE users ADD COLUMN is_verified BOOLEAN NOT NULL DEFAULT 0; ALTER TABLE users ADD COLUMN verified_at DATETIME;"
+> ```
 
 ---
 
@@ -107,15 +116,18 @@ unifind/
 ├── backend/                  FastAPI + SQLite
 │   ├── main.py               App entry point, routers, CORS, /uploads
 │   ├── database.py           SQLite engine, session, get_db dependency
-│   ├── models.py             Tables: User, Item, Claim, ItemMatch, Comment,
-│   │                         Conversation, Message, Notification, ContentReport
+│   ├── models.py             Tables: User, EmailVerification, Item, Claim,
+│   │                         ItemMatch, Comment, Conversation, Message,
+│   │                         Notification, ContentReport
 │   ├── schemas.py            Pydantic validation + the UIU email rule
-│   ├── auth.py               bcrypt hashing, JWT session cookie, route guards
+│   ├── auth.py               bcrypt hashing, JWT session cookie, route guards,
+│   │                         six-digit confirmation codes
+│   ├── mailer.py             Sends the confirmation code (stdlib SMTP)
 │   ├── matching.py           Rule-based Smart Match scoring
 │   ├── helpers.py            Item serialisation + notification helper
 │   ├── seed.py               Demo accounts and items
 │   ├── routers/
-│   │   ├── auth.py           register / login / logout / me
+│   │   ├── auth.py           register / login / logout / me / verify / resend
 │   │   ├── items.py          Report, browse, search, filter, edit, status, upload
 │   │   ├── claims.py         Submit, list, approve/reject
 │   │   ├── comments.py       Community comment threads
@@ -162,6 +174,7 @@ unifind/
 ### Authenticated UIU members
 | Route | Page |
 | --- | --- |
+| `/verify` | Confirm your UIU email |
 | `/dashboard` | Dashboard |
 | `/browse` | Browse lost &amp; found items |
 | `/items/:id` | Item details |
@@ -199,6 +212,8 @@ Full interactive documentation: **http://127.0.0.1:8000/docs**
 | POST | `/api/auth/login` | Sign in |
 | POST | `/api/auth/logout` | Sign out |
 | GET | `/api/auth/me` | Current member |
+| POST | `/api/auth/verify` | Confirm the UIU email with the six-digit code |
+| POST | `/api/auth/resend` | Send a fresh code (once a minute) |
 | GET | `/api/items` | Browse — supports `search`, `type`, `category`, `location`, `status`, `mine`, `sort` |
 | GET | `/api/items/{id}` | Item details |
 | POST | `/api/items` | Report an item |
@@ -254,10 +269,57 @@ changed, and a resolved or withdrawn item drops out of matching entirely.
 
 ---
 
-## 9. Security and validation
+## 9. Email confirmation
+
+Registering signs the member in straight away, but the account starts
+**unconfirmed**: a six-digit code goes to the UIU address, and `/verify` asks for
+it back.
+
+This is a **soft gate**. Reading UniFind — browsing, searching, the dashboard,
+item details — works while unconfirmed, and a banner explains what is missing.
+Anything that creates content other members act on is refused with a `403` until
+the address is confirmed:
+
+| Refused until confirmed | Still allowed |
+| --- | --- |
+| Report an item · upload a photo · edit a post | Browse, search, filter, sort |
+| Submit an ownership claim | Item details, Smart Matches |
+| Post a comment | Dashboard, notifications, profile |
+| Start a conversation · send a message | Winding down posts you already own |
+
+The gate is `get_verified_user` in `backend/auth.py`, applied to those routes
+only. As always the React side is convenience — the API enforces it.
+
+**Why a stored code and not a signed link.** A six-digit code is about twenty
+bits: a million guesses, which is nothing. So unlike a JWT link it cannot defend
+itself, and the code carries its own protection instead —
+
+- stored as a **bcrypt hash**, never in plain text;
+- **expires after 10 minutes**, and only one code is live per member at a time;
+- **five wrong attempts burns it**, after which even the correct code is dead
+  and a new one must be requested;
+- **resend is limited to once a minute**, so the endpoint cannot be used to
+  mail-bomb a UIU address;
+- generated with `secrets`, never `random` — `random` is seeded from the clock,
+  so a couple of observed codes would predict the rest.
+
+**Running it without a mail server.** If `UNIFIND_SMTP_HOST` is not set, the code
+is printed to the backend console instead of being emailed, and the confirmation
+screen shows it directly. So the whole flow runs on a laptop with no credentials
+and no inbox. Setting the SMTP variables in section 11 switches it to real email
+with no code change. The on-screen code is suppressed when
+`UNIFIND_ENV=production`.
+
+The four seeded demo accounts are created already confirmed, so the faculty
+demonstration in section 12 never touches this.
+
+---
+
+## 10. Security and validation
 
 - Passwords are hashed with **bcrypt**. Plain text is never stored, and the hash
-  is never returned by the API.
+  is never returned by the API. Confirmation codes are hashed the same way.
+- Email confirmation is rate limited and attempt capped — see section 9.
 - The session is a **JWT in an httpOnly cookie**, so page JavaScript cannot read
   it.
 - The **UIU email rule** (`*.uiu.ac.bd`, any department subdomain) is enforced in
@@ -280,7 +342,7 @@ changed, and a resolved or withdrawn item drops out of matching entirely.
 
 ---
 
-## 10. Configuration
+## 11. Configuration
 
 Backend settings are environment variables. Copy `backend/.env.example` to
 `backend/.env` to change them — every one has a working development default, so
@@ -292,6 +354,10 @@ Backend settings are environment variables. Copy `backend/.env.example` to
 | `UNIFIND_ENV` | `development` | Set to `production` to mark the cookie `Secure` (requires HTTPS). |
 | `UNIFIND_UPLOAD_DIR` | `backend/uploads/` | Where item photos are written. |
 | `UNIFIND_ALLOWED_ORIGINS` | — | Extra browser origins allowed to call the API. |
+| `UNIFIND_SMTP_HOST` | — | Mail server for confirmation codes. Unset means the code is printed to the backend console instead. |
+| `UNIFIND_SMTP_PORT` | `587` | 465 is treated as implicit TLS; anything else uses STARTTLS. |
+| `UNIFIND_SMTP_USER` · `UNIFIND_SMTP_PASSWORD` | — | Credentials, if the server needs them. |
+| `UNIFIND_MAIL_FROM` | `UniFind <no-reply@uiu.ac.bd>` | From address on the confirmation email. |
 
 **Note on image storage:** photos are written to `backend/uploads/`, which is
 git-ignored so member uploads are never committed. For a real deployment, either
@@ -301,7 +367,7 @@ the `upload_photo` handler in `backend/routers/items.py` with a call to an image
 
 ---
 
-## 11. Faculty demonstration flow
+## 12. Faculty demonstration flow
 
 1. Start both servers (section 2).
 2. Sign in as `ayesha@bscse.uiu.ac.bd` / `UniFind2026`.
@@ -321,7 +387,7 @@ This proves the full round trip: **React → FastAPI → SQLite → FastAPI → 
 
 ---
 
-## 12. Feature status
+## 13. Feature status
 
 **Working end-to-end (React → FastAPI → SQLite):**
 
@@ -330,6 +396,7 @@ This proves the full round trip: **React → FastAPI → SQLite → FastAPI → 
 | **Feature 1** — Lost/Found item reporting | Complete, with photo upload |
 | **Feature 2** — Browse, search, filter, sort | Complete |
 | **Feature 3** — Claims &amp; status tracking (`OPEN → PENDING → RESOLVED`) | Complete |
+| Email confirmation (six-digit code + soft gate) | Complete |
 | Smart Matching | Complete (rule-based) |
 | Comments | Complete |
 | Private messaging | Complete |
@@ -345,12 +412,12 @@ project features.
 
 ---
 
-## 13. Verifying the API
+## 14. Verifying the API
 
 `backend/smoke_test.ps1` exercises the whole API against a running backend — the
 UIU email rule, protected routes, the report → browse → search → claim →
 resolve flow, Smart Matching, ownership rules, privacy of identifying details
-and conversations, and admin moderation. 51 checks.
+and conversations, admin moderation, and email confirmation with its soft gate. 59 checks.
 
 With the backend running, from PowerShell:
 
@@ -363,7 +430,7 @@ backend, delete `backend/unifind.db`, and run `seed.py` again.
 
 ---
 
-## 14. Notes
+## 15. Notes
 
 - `_legacy/` holds the previous TypeScript/tRPC/Drizzle implementation, kept for
   reference only. Nothing in the running app imports it, and it can be deleted.

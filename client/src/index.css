@@ -2747,3 +2747,128 @@ a.table-title:hover {
     scroll-behavior: auto !important;
   }
 }
+
+/* --------------------------------------------------------------------------
+   21. Email confirmation
+   -------------------------------------------------------------------------- */
+
+/* Six recessed wells, one per digit — the same inset lighting as every other
+   input, just squared off so the code reads as a sequence rather than a field. */
+.verify-code {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 10px;
+  margin: 26px 0 6px;
+}
+
+.verify-code input {
+  width: 100%;
+  /* ~48px minimum touch target, as everywhere else. */
+  height: 58px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--surface-recessed);
+  box-shadow: var(--recess-sm);
+  color: var(--text-primary);
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 24px;
+  font-weight: 700;
+  text-align: center;
+  transition: box-shadow var(--speed) var(--ease);
+}
+
+.verify-code input:focus {
+  outline: none;
+  box-shadow: var(--recess-sm), 0 0 0 2px var(--accent);
+}
+
+.verify-code input:disabled {
+  color: var(--text-muted);
+}
+
+.verify-resend {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  width: 100%;
+  margin-top: 14px;
+  font-size: 13.5px;
+}
+
+.verify-resend:disabled {
+  color: var(--text-muted);
+  cursor: default;
+}
+
+/* Development affordance: shown only when the backend has no SMTP server. */
+.verify-devnote {
+  margin: 22px 0 4px;
+  padding: 14px 16px;
+  border-radius: var(--radius-sm);
+  font-size: 13.5px;
+  color: var(--text-secondary);
+}
+
+.verify-devnote p {
+  margin: 0;
+}
+
+.verify-devnote .mono-label {
+  margin-bottom: 6px;
+}
+
+.verify-devnote code {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--accent-strong);
+}
+
+.verify-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: var(--shell-max);
+  margin: 18px auto 0;
+  padding: 13px 18px;
+  border-radius: var(--radius);
+  /* Pending amber, not the accent: this is a state to resolve, not an action. */
+  background: var(--pending-soft);
+  box-shadow: var(--raise-sm);
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
+.verify-banner svg {
+  flex-shrink: 0;
+  color: var(--pending);
+}
+
+.verify-banner p {
+  flex: 1;
+  margin: 0;
+}
+
+.verify-banner strong {
+  color: var(--text-primary);
+}
+
+@media (max-width: 720px) {
+  .verify-banner {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    margin: 14px 14px 0;
+  }
+
+  .verify-code {
+    gap: 7px;
+  }
+
+  .verify-code input {
+    height: 52px;
+    font-size: 21px;
+  }
+}

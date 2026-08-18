@@ -7,7 +7,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { authService } from "@/services/authService";
+import { authService, type RegisterResult } from "@/services/authService";
 import { isUnauthorized } from "@/services/api";
 import type { User } from "@/types";
 
@@ -17,12 +17,13 @@ type AuthValue = {
   loading: boolean;
   isAdmin: boolean;
   login: (email: string, password: string) => Promise<User>;
+  /** Resolves with the new member plus the confirmation-code details. */
   register: (payload: {
     name: string;
     email: string;
     password: string;
     department?: string;
-  }) => Promise<User>;
+  }) => Promise<RegisterResult>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
 };

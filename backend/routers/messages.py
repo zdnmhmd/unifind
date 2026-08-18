@@ -7,7 +7,7 @@ required for this project.
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from auth import get_current_user
+from auth import get_current_user, get_verified_user
 from database import get_db
 from helpers import create_notification, serialize_item
 from models import Conversation, Item, Message, User, utcnow
@@ -96,7 +96,7 @@ def list_conversations(
 @router.post("", response_model=ConversationDetail, status_code=status.HTTP_201_CREATED)
 def start_conversation(
     payload: ConversationStart,
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_verified_user),
     db: Session = Depends(get_db),
 ):
     """Open (or reuse) the conversation between two members about one item."""
@@ -198,7 +198,7 @@ def get_conversation(
 def send_message(
     conversation_id: int,
     payload: MessageCreate,
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_verified_user),
     db: Session = Depends(get_db),
 ):
     conversation = db.get(Conversation, conversation_id)

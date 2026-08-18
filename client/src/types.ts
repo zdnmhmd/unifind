@@ -11,7 +11,18 @@ export type User = {
   email: string;
   department: string | null;
   role: "user" | "admin";
+  /** False until the member enters the code sent to their UIU address. */
+  is_verified: boolean;
   created_at: string;
+};
+
+export type Verification = {
+  /** False when the backend has no SMTP server — the code went to its console. */
+  sent: boolean;
+  email: string;
+  expires_in_minutes: number;
+  /** Development only. Never present when the backend runs in production. */
+  dev_code: string | null;
 };
 
 export type Item = {

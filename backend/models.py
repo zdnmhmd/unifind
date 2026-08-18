@@ -36,10 +36,35 @@ class User(Base):
     # "user" or "admin" — see spec section 4.
     role: Mapped[str] = mapped_column(String(16), default="user", nullable=False)
     is_suspended: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # Email confirmation (spec section 5). False until the member types the code
+    # that was mailed to their UIU address.
+    is_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
     last_signed_in: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
 
     items: Mapped[list["Item"]] = relationship(back_populates="owner")
+
+
+class EmailVerification(Base):
+    """One outstanding six-digit confirmation code for one member.
+
+    A six-digit code is only a million possibilities, so unlike a signed link it
+    cannot defend itself: the row carries an expiry and an attempt counter, and
+    the code is stored as a bcrypt hash so a leaked database hands over nothing
+    usable.
+    """
+
+    __tablename__ = "email_verifications"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    code_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+
+    __table_args__ = (Index("email_verifications_user_idx", "user_id"),)
 
 
 class Item(Base):

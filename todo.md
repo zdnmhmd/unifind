@@ -22,19 +22,23 @@
 - [x] Resolved gallery.
 - [x] User dashboard with summary modules, quick actions, and recent activity.
 - [x] Admin dashboard, post moderation, report queue, and basic user administration.
+- [x] Email confirmation: a six-digit code mailed to the UIU address, with a soft
+      gate that keeps reading open but closes posting and claiming until confirmed
+      (spec section 5). Falls back to the backend console when no SMTP is set.
 
 ## Quality
 
 - [x] Loading, empty, and error states on every data-driven screen.
 - [x] Responsive layouts: 3 cards desktop, 2 tablet, 1 mobile, ~48px touch targets.
 - [x] Ownership and admin authorisation enforced server-side, never trusting the frontend.
-- [x] API verified end-to-end — `backend/smoke_test.ps1`, 51 checks passing.
+- [x] API verified end-to-end — `backend/smoke_test.ps1`, 59 checks passing.
 - [x] Frontend typecheck and production build clean.
 - [x] README with setup commands, demo accounts, API reference, and the faculty demo flow.
 
 ## Possible next steps
 
-- [ ] Verify the UIU email through an actual confirmation link (spec section 5 mentions this for the final app).
+- [ ] Let a member correct a mistyped email before confirming, instead of
+      registering again.
 - [ ] Move item photos to an external image bucket instead of `backend/uploads/` (spec section 3).
 - [ ] Add a "Not my item" dismissal that hides a specific match pair for that member.
 - [ ] Port `backend/smoke_test.ps1` to pytest so it runs cross-platform.
