@@ -87,8 +87,26 @@ class VerificationOut(BaseModel):
     dev_code: str | None = None
 
 
-class RegisterResponse(UserOut):
+class RegisterResponse(BaseModel):
+    """Registration does not sign anybody in, so there is no member to return.
+
+    Only what the confirmation screen needs to introduce itself.
+    """
+
+    name: str
+    email: str
     verification: VerificationOut
+
+
+class PendingOut(BaseModel):
+    """Who the confirmation screen is waiting on, read back from the cookie.
+
+    Lets /verify survive a page reload without the member signing in first.
+    """
+
+    name: str
+    email: str
+    expires_in_minutes: int
 
 
 class VerifyCodeRequest(BaseModel):
@@ -109,6 +127,8 @@ class VerifyCodeRequest(BaseModel):
 
 
 class VerifyCodeResponse(BaseModel):
+    """Confirming the code is also the moment the member is signed in."""
+
     user: UserOut
     message: str
 
@@ -144,7 +164,12 @@ class ItemCreate(BaseModel):
 
 
 class ItemUpdate(BaseModel):
-    """Every field optional — used by PUT /api/items/{id}."""
+    """Every field optional — used by PUT /api/items/{id}.
+
+    Normalised exactly like ItemCreate. When only one of the two trimmed, an
+    edit could quietly store "  Main Library " where a create would have stored
+    "Main Library", and the two would then stop matching each other in search.
+    """
 
     title: str | None = Field(default=None, min_length=2, max_length=180)
     category: str | None = Field(default=None, min_length=2, max_length=80)
@@ -156,6 +181,30 @@ class ItemUpdate(BaseModel):
     color: str | None = Field(default=None, max_length=80)
     model: str | None = Field(default=None, max_length=120)
     identifying_details: str | None = Field(default=None, max_length=3000)
+
+    @field_validator("title", "category", "description", "location")
+    @classmethod
+    def strip_required(cls, value: str | None) -> str | None:
+        """Trim, and refuse a value that was nothing but whitespace.
+
+        Returning None for a blank would silently drop the edit instead; these
+        four are required on the item, so an all-spaces title is a mistake worth
+        reporting rather than ignoring.
+        """
+        if value is None:
+            return None
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("This field cannot be only spaces.")
+        return cleaned
+
+    @field_validator("brand", "color", "model", "identifying_details", "image_url")
+    @classmethod
+    def strip_optional(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        return cleaned or None
 
 
 class ItemStatusUpdate(BaseModel):
@@ -209,6 +258,17 @@ class ClaimCreate(BaseModel):
 
 class ClaimReview(BaseModel):
     status: Literal["approved", "rejected"]
+    # Optional, and kept in the audit trail rather than shown to the claimant,
+    # so the reviewer can be candid about why.
+    reason: str | None = Field(default=None, max_length=1000)
+
+    @field_validator("reason")
+    @classmethod
+    def strip_reason(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        return cleaned or None
 
 
 class ClaimOut(BaseModel):

@@ -21,9 +21,15 @@ from schemas import is_uiu_email, UIU_EMAIL_ERROR
 
 SESSION_COOKIE = "unifind_session"
 
+# Registration does not sign anybody in. Until the six-digit code is entered the
+# browser only carries this second, much weaker cookie: it names the account
+# waiting to be confirmed and authorises nothing else.
+PENDING_COOKIE = "unifind_pending"
+
 # A real deployment must set UNIFIND_SECRET_KEY. The development fallback keeps
 # `uvicorn main:app --reload` working out of the box for local demos.
-SECRET_KEY = os.getenv("UNIFIND_SECRET_KEY", "unifind-development-secret-change-me")
+DEVELOPMENT_SECRET = "unifind-development-secret-change-me"
+SECRET_KEY = os.getenv("UNIFIND_SECRET_KEY", DEVELOPMENT_SECRET)
 ALGORITHM = "HS256"
 SESSION_DAYS = 7
 
@@ -35,6 +41,9 @@ IS_PRODUCTION = os.getenv("UNIFIND_ENV", "development").lower() == "production"
 CODE_TTL_MINUTES = 10
 MAX_CODE_ATTEMPTS = 5
 RESEND_COOLDOWN_SECONDS = 60
+# Longer than one code's life, so a member who lets a code expire can still ask
+# for another without being thrown back to the sign-in form.
+PENDING_MINUTES = 60
 
 
 # ---------------------------------------------------------------------------
@@ -84,6 +93,40 @@ def clear_session_cookie(response) -> None:
     response.delete_cookie(key=SESSION_COOKIE, path="/")
 
 
+def create_pending_token(user: User) -> str:
+    """Name the account that is waiting on its confirmation code.
+
+    `purpose` is what keeps the two tokens apart. Both are signed with the same
+    key, so without it a pending token would decode perfectly well as a session
+    and hand out an account that was never confirmed.
+    """
+    now = datetime.now(timezone.utc)
+    payload = {
+        "sub": str(user.id),
+        "email": user.email,
+        "purpose": "verify",
+        "iat": now,
+        "exp": now + timedelta(minutes=PENDING_MINUTES),
+    }
+    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+
+
+def set_pending_cookie(response, token: str) -> None:
+    response.set_cookie(
+        key=PENDING_COOKIE,
+        value=token,
+        httponly=True,
+        samesite="lax",
+        secure=IS_PRODUCTION,
+        max_age=PENDING_MINUTES * 60,
+        path="/",
+    )
+
+
+def clear_pending_cookie(response) -> None:
+    response.delete_cookie(key=PENDING_COOKIE, path="/")
+
+
 # ---------------------------------------------------------------------------
 # Route guards
 # ---------------------------------------------------------------------------
@@ -118,6 +161,47 @@ def get_current_user(
     # rule — if an account's email ever stops qualifying, access stops with it.
     if not is_uiu_email(user.email):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=UIU_EMAIL_ERROR)
+
+    if user.is_suspended:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This account is suspended. Contact the UniFind administrators.",
+        )
+
+    return user
+
+
+_NO_PENDING = HTTPException(
+    status_code=status.HTTP_401_UNAUTHORIZED,
+    detail="That confirmation session has expired. Sign in again to get a new code.",
+)
+
+
+def get_pending_user(
+    unifind_pending: str | None = Cookie(default=None, alias=PENDING_COOKIE),
+    db: Session = Depends(get_db),
+) -> User:
+    """Resolve the account waiting on its code, for /verify and /resend only.
+
+    This is deliberately the *only* thing the pending cookie can do. It never
+    reaches get_current_user, so an unconfirmed account cannot read or write
+    anything in UniFind.
+    """
+    if not unifind_pending:
+        raise _NO_PENDING
+
+    try:
+        payload = jwt.decode(unifind_pending, SECRET_KEY, algorithms=[ALGORITHM])
+    except jwt.PyJWTError:
+        raise _NO_PENDING
+
+    if payload.get("purpose") != "verify":
+        raise _NO_PENDING
+
+    user_id = payload.get("sub")
+    user = db.get(User, int(user_id)) if user_id else None
+    if user is None:
+        raise _NO_PENDING
 
     if user.is_suspended:
         raise HTTPException(
@@ -209,11 +293,29 @@ def seconds_until_resend_allowed(row: EmailVerification | None) -> int:
     return max(0, int(RESEND_COOLDOWN_SECONDS - elapsed))
 
 
+def assert_production_secret() -> None:
+    """Refuse to serve production traffic with the published development key.
+
+    This value is in the repository, so anyone who can read it can mint a valid
+    session for any account — including an administrator. Unlike a missing mail
+    server, that is not degraded service, so it stops the process rather than
+    logging a warning nobody reads.
+    """
+    if IS_PRODUCTION and SECRET_KEY == DEVELOPMENT_SECRET:
+        raise RuntimeError(
+            "UNIFIND_SECRET_KEY is still the development default while "
+            "UNIFIND_ENV=production. That key is public in the repository, so "
+            "anyone could forge a session for any account. Set UNIFIND_SECRET_KEY "
+            "to a long random value before starting the server."
+        )
+
+
 def get_verified_user(user: User = Depends(get_current_user)) -> User:
     """Require a confirmed UIU email.
 
-    The soft gate: reading UniFind only needs a session, but anything that
-    creates content for other members to act on needs a confirmed address.
+    A session is now only ever issued after confirmation, so this should never
+    fire. It stays as the second lock: if a session is ever handed out earlier
+    by mistake, posting and claiming still refuse it.
     """
     if not user.is_verified:
         raise HTTPException(

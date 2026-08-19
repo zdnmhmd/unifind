@@ -2,12 +2,18 @@
 
 Authentication is required system functionality, but it is deliberately NOT
 counted as one of the project's main Lost & Found features (spec section 4).
+
+Confirming the emailed code is a hard gate. Registering creates the account and
+mails a code, but issues no session at all; the browser only gets the pending
+cookie, which can do nothing except confirm or ask for another code. The session
+is issued at the moment the correct code is entered — that one step is what both
+finishes registration and signs the member in.
 """
 
-import os
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 import auth as auth_utils
@@ -16,6 +22,7 @@ from database import get_db
 from models import EmailVerification, User
 from schemas import (
     LoginRequest,
+    PendingOut,
     RegisterRequest,
     RegisterResponse,
     SimpleOk,
@@ -38,15 +45,24 @@ def _issue_and_send(db: Session, user: User) -> VerificationOut:
     sent = mailer.send_verification_code(
         user.email, user.name, code, auth_utils.CODE_TTL_MINUTES
     )
-    is_production = os.getenv("UNIFIND_ENV", "development").lower() == "production"
     return VerificationOut(
         sent=sent,
         email=user.email,
         expires_in_minutes=auth_utils.CODE_TTL_MINUTES,
         # Returning the code is a development affordance only. In production this
         # would hand the code to anyone who could reach the endpoint.
-        dev_code=None if is_production else code,
+        dev_code=None if mailer.is_production() else code,
     )
+
+
+# What the member is told when a code cannot be delivered. Deliberately says
+# nothing about mail servers or configuration: that is for the logs and the
+# administrators, not for a student staring at a form.
+_UNDELIVERABLE = (
+    "We could not send a confirmation code to that address just now, so the "
+    "account was not created. Please try again in a few minutes, and let the "
+    "UniFind administrators know if it keeps happening."
+)
 
 
 @router.post("/register", response_model=RegisterResponse, status_code=status.HTTP_201_CREATED)
@@ -77,12 +93,26 @@ def register(payload: RegisterRequest, response: Response, db: Session = Depends
 
     verification = _issue_and_send(db, user)
 
-    # The member is signed in immediately but unverified: they can look around,
-    # while posting and claiming stay closed until they confirm (the soft gate).
-    auth_utils.set_session_cookie(response, auth_utils.create_session_token(user))
-    return RegisterResponse(
-        **UserOut.model_validate(user).model_dump(), verification=verification
-    )
+    if mailer.is_production() and not verification.sent:
+        # The code reached nobody and there is no console to fall back on, so
+        # this account could never be confirmed. Leaving it would be worse than
+        # failing: it can do nothing, and it blocks its own email from being
+        # registered again with a 409. Undo it and let them retry cleanly.
+        db.query(EmailVerification).filter(EmailVerification.user_id == user.id).delete(
+            synchronize_session=False
+        )
+        db.delete(user)
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=_UNDELIVERABLE
+        )
+
+    # No session here. Creating the account is not the same as proving the
+    # address belongs to you, and only the code proves that. All the browser
+    # gets is the pending cookie, which /verify and /resend accept and nothing
+    # else does.
+    auth_utils.set_pending_cookie(response, auth_utils.create_pending_token(user))
+    return RegisterResponse(name=user.name, email=user.email, verification=verification)
 
 
 @router.post("/login", response_model=UserOut)
@@ -103,17 +133,46 @@ def login(payload: LoginRequest, response: Response, db: Session = Depends(get_d
             detail="This account is suspended. Contact the UniFind administrators.",
         )
 
+    if not user.is_verified:
+        # Right password, unconfirmed address: mail a fresh code and hand back a
+        # pending cookie rather than a session. The password was correct, so
+        # this leaks nothing that the caller did not already know.
+        verification = _issue_and_send(db, user)
+        # Returned rather than raised: an HTTPException discards the injected
+        # `response`, and with it the cookie the confirmation screen needs.
+        refusal = JSONResponse(
+            status_code=status.HTTP_403_FORBIDDEN,
+            # A dict rather than a bare sentence so the React app can route to
+            # the confirmation screen instead of only printing the message.
+            content={
+                "detail": {
+                    "code": "email_unverified",
+                    "message": "Confirm your UIU email first. We just sent a new code to "
+                    f"{user.email}.",
+                    "verification": verification.model_dump(),
+                }
+            },
+        )
+        auth_utils.set_pending_cookie(refusal, auth_utils.create_pending_token(user))
+        return refusal
+
     user.last_signed_in = datetime.now(timezone.utc)
     db.commit()
     db.refresh(user)
 
     auth_utils.set_session_cookie(response, auth_utils.create_session_token(user))
+    # Clear a leftover pending cookie from an abandoned confirmation, so it can
+    # never point at a different account than the session does.
+    auth_utils.clear_pending_cookie(response)
     return user
 
 
 @router.post("/logout", response_model=SimpleOk)
 def logout(response: Response):
     auth_utils.clear_session_cookie(response)
+    # Also drop any half-finished confirmation, so signing out really does leave
+    # the browser holding nothing.
+    auth_utils.clear_pending_cookie(response)
     return SimpleOk()
 
 
@@ -122,19 +181,34 @@ def me(user: User = Depends(auth_utils.get_current_user)):
     return user
 
 
+@router.get("/pending", response_model=PendingOut)
+def pending(user: User = Depends(auth_utils.get_pending_user)):
+    """Who the confirmation screen is waiting on.
+
+    Read straight from the pending cookie, so reloading /verify does not lose
+    the member's place — there is no session to fall back on yet.
+    """
+    return PendingOut(
+        name=user.name, email=user.email, expires_in_minutes=auth_utils.CODE_TTL_MINUTES
+    )
+
+
 @router.post("/verify", response_model=VerifyCodeResponse)
 def verify_email(
     payload: VerifyCodeRequest,
-    user: User = Depends(auth_utils.get_current_user),
+    response: Response,
+    user: User = Depends(auth_utils.get_pending_user),
     db: Session = Depends(get_db),
 ):
-    """Confirm the member's UIU address with the six-digit code that was mailed.
+    """Confirm the UIU address with the six-digit code, and sign the member in.
 
-    The code is checked against the signed-in member, so this endpoint cannot be
-    used to work on somebody else's account.
+    The account comes from the pending cookie, never from the request body, so
+    this endpoint cannot be pointed at somebody else's registration.
     """
     # Idempotent: mail clients prefetch, and people submit twice.
     if user.is_verified:
+        auth_utils.set_session_cookie(response, auth_utils.create_session_token(user))
+        auth_utils.clear_pending_cookie(response)
         return VerifyCodeResponse(
             user=UserOut.model_validate(user), message="Your UIU email is already confirmed."
         )
@@ -185,18 +259,24 @@ def verify_email(
     db.query(EmailVerification).filter(EmailVerification.user_id == user.id).delete(
         synchronize_session=False
     )
+    user.last_signed_in = datetime.now(timezone.utc)
     db.commit()
     db.refresh(user)
 
+    # The one moment a session is ever issued at registration time: the address
+    # has just been proved, so the confirmation doubles as the sign-in.
+    auth_utils.set_session_cookie(response, auth_utils.create_session_token(user))
+    auth_utils.clear_pending_cookie(response)
+
     return VerifyCodeResponse(
         user=UserOut.model_validate(user),
-        message="Your UIU email is confirmed. Everything is unlocked.",
+        message="Your UIU email is confirmed. You are signed in.",
     )
 
 
 @router.post("/resend", response_model=VerificationOut)
 def resend_verification(
-    user: User = Depends(auth_utils.get_current_user),
+    user: User = Depends(auth_utils.get_pending_user),
     db: Session = Depends(get_db),
 ):
     """Send a fresh confirmation code, at most once a minute."""
@@ -213,4 +293,11 @@ def resend_verification(
             detail=f"Please wait {wait} more second{'s' if wait != 1 else ''} before asking again.",
         )
 
-    return _issue_and_send(db, user)
+    verification = _issue_and_send(db, user)
+    if mailer.is_production() and not verification.sent:
+        # Nothing to undo here — the account already exists — but saying "a new
+        # code is on its way" when it is not would just make them wait.
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=_UNDELIVERABLE
+        )
+    return verification

@@ -9,7 +9,7 @@ import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { CheckCircle2, Mail, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/context/AuthContext";
-import { FieldError } from "@/components/common/Feedback";
+import { FieldError, LoadingSpinner } from "@/components/common/Feedback";
 import { Logo } from "@/components/common/Logo";
 import { authService } from "@/services/authService";
 import type { Verification } from "@/types";
@@ -19,21 +19,33 @@ const CODE_LENGTH = 6;
 /** Matches RESEND_COOLDOWN_SECONDS in backend/auth.py. */
 const RESEND_COOLDOWN = 60;
 
+/** Matches CODE_TTL_MINUTES in backend/auth.py, used only until the real value loads. */
+const CODE_TTL_MINUTES = 10;
+
 /**
  * Email confirmation (spec section 5).
  *
- * The member arrives here straight after registering, already signed in but not
- * yet confirmed. Reading UniFind works meanwhile; posting and claiming do not,
- * which is what makes this worth completing rather than skipping.
+ * This screen is the gate, not a reminder. Registering creates the account but
+ * hands out no session — the member is not signed in while they are here, and
+ * entering the correct code is what both confirms the address and signs them
+ * in. Everything on this page therefore runs off the pending cookie, which the
+ * backend accepts for exactly two endpoints: /verify and /resend.
  */
 export function Verify() {
   const { user, refresh } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Register hands the code details over in router state so the dev-mode code
-  // can be shown without a second request.
+  // Register and Login hand the details over in router state, so the usual
+  // arrival needs no extra request. A reload has no state, and falls back to
+  // asking the server who the pending cookie names.
   const handoff = (location.state as { verification?: Verification } | null)?.verification;
+
+  const [email, setEmail] = useState<string | null>(handoff?.email ?? null);
+  const [expiresIn, setExpiresIn] = useState(handoff?.expires_in_minutes ?? CODE_TTL_MINUTES);
+  const [checking, setChecking] = useState(!handoff);
+  /** True once the pending cookie is gone or expired — there is nothing to confirm. */
+  const [lapsed, setLapsed] = useState(false);
 
   const [digits, setDigits] = useState<string[]>(Array(CODE_LENGTH).fill(""));
   const [error, setError] = useState<string>();
@@ -44,9 +56,31 @@ export function Verify() {
 
   const inputs = useRef<Array<HTMLInputElement | null>>([]);
 
+  // Recover the pending account after a reload, when router state is gone.
   useEffect(() => {
-    inputs.current[0]?.focus();
-  }, []);
+    if (handoff) return;
+    let cancelled = false;
+    authService
+      .pending()
+      .then(pending => {
+        if (cancelled) return;
+        setEmail(pending.email);
+        setExpiresIn(pending.expires_in_minutes);
+      })
+      .catch(() => {
+        if (!cancelled) setLapsed(true);
+      })
+      .finally(() => {
+        if (!cancelled) setChecking(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [handoff]);
+
+  useEffect(() => {
+    if (!checking) inputs.current[0]?.focus();
+  }, [checking]);
 
   // Tick the resend cooldown down to zero.
   useEffect(() => {
@@ -55,16 +89,21 @@ export function Verify() {
     return () => window.clearTimeout(timer);
   }, [cooldown]);
 
-  // Nothing to confirm — either signed out, or already done.
-  if (!user) return <Navigate to="/login" replace />;
-  if (user.is_verified) return <Navigate to="/dashboard" replace />;
+  // Confirming is what signs the member in, so a session here means it is done.
+  if (user) return <Navigate to="/dashboard" replace />;
+
+  if (checking) return <LoadingSpinner label="Looking up your confirmation…" />;
+
+  // No pending registration: nothing on this page would work, and signing in
+  // issues a fresh code for anyone whose address is still unconfirmed.
+  if (lapsed || !email) return <Navigate to="/login" replace />;
 
   async function submitCode(code: string) {
     setSubmitting(true);
     setError(undefined);
     try {
       const { message } = await authService.verify(code);
-      // Pull the updated member down so the banner and the gates clear at once.
+      // The session cookie arrived with that response — this is what picks it up.
       await refresh();
       toast.success(message);
       navigate("/dashboard", { replace: true });
@@ -123,9 +162,11 @@ export function Verify() {
       setCooldown(RESEND_COOLDOWN);
       setDigits(Array(CODE_LENGTH).fill(""));
       inputs.current[0]?.focus();
-      toast.success(
-        result.sent ? `A new code is on its way to ${result.email}.` : "A new code was generated."
-      );
+      if (result.sent) toast.success(`A new code is on its way to ${result.email}.`);
+      else if (result.dev_code) toast.success("A new code was generated.");
+      // Neither sent nor shown: the production backend refuses this with a 503,
+      // so reaching here at all would mean something is genuinely wrong.
+      else toast.error("We could not send that code. Please try again shortly.");
     } catch (caught) {
       setError((caught as Error).message);
     }
@@ -138,23 +179,29 @@ export function Verify() {
         <p className="mono-label accent">CONFIRM YOUR UIU EMAIL</p>
         <h1>Check your inbox.</h1>
         <p className="auth-lede">
-          We sent a six-digit code to <strong>{user.email}</strong>. Enter it below to finish
-          setting up your account. You can browse UniFind meanwhile — reporting an item and
-          claiming one stay closed until your address is confirmed.
+          We sent a six-digit code to <strong>{email}</strong>. Entering it confirms the address
+          and signs you in — your account is not usable until then.
         </p>
 
-        {!delivered && (
+        {/* The code itself only ever comes back from a development backend. */}
+        {devCode && (
           <div className="verify-devnote recessed">
             <p className="mono-label">NO MAIL SERVER CONFIGURED</p>
             <p>
-              The backend has no SMTP host set, so the code was printed to its console instead of
-              being emailed.
-              {devCode && (
-                <>
-                  {" "}
-                  For this development build it is <code>{devCode}</code>.
-                </>
-              )}
+              This backend has no SMTP host set, so the code was printed to its console instead of
+              being emailed. For this development build it is <code>{devCode}</code>.
+            </p>
+          </div>
+        )}
+
+        {/* Undelivered with no code to show means a real member is stuck, so say
+            that plainly rather than leaking anything about the configuration. */}
+        {!delivered && !devCode && (
+          <div className="verify-devnote recessed">
+            <p className="mono-label">THE EMAIL DID NOT GO OUT</p>
+            <p>
+              We could not deliver your code just now. Try <strong>Send another code</strong> in a
+              moment, and let the UniFind administrators know if it keeps failing.
             </p>
           </div>
         )}
@@ -187,7 +234,7 @@ export function Verify() {
           disabled={submitting || digits.includes("")}
           onClick={() => void submitCode(digits.join(""))}
         >
-          {submitting ? "Confirming…" : "Confirm my email"} <CheckCircle2 size={17} />
+          {submitting ? "Confirming…" : "Confirm and sign in"} <CheckCircle2 size={17} />
         </button>
 
         <button
@@ -201,11 +248,11 @@ export function Verify() {
         </button>
 
         <p className="auth-switch">
-          Wrong address? <Link to="/profile">Check your profile</Link>
+          Wrong address? <Link to="/register">Register again</Link>
         </p>
 
         <p className="auth-footnote mono-label">
-          <Mail size={13} /> CODES EXPIRE AFTER {handoff?.expires_in_minutes ?? 10} MINUTES
+          <Mail size={13} /> CODES EXPIRE AFTER {expiresIn} MINUTES
         </p>
       </div>
     </div>

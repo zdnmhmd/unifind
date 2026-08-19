@@ -120,6 +120,32 @@ class Claim(Base):
     )
 
 
+class ClaimDecision(Base):
+    """One recorded transition of one claim, kept forever.
+
+    The claim row only ever shows where it ended up. When a student asks why
+    their claim was rejected — or disputes that it ever was — the answer has to
+    come from somewhere, so every decision is written here with who made it and
+    what the claim looked like beforehand. Rows are never updated or deleted.
+    """
+
+    __tablename__ = "claim_decisions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    claim_id: Mapped[int] = mapped_column(ForeignKey("claims.id"), nullable=False)
+    # Who decided. Nullable so a decision survives the account being removed.
+    actor_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    from_status: Mapped[str] = mapped_column(String(12), nullable=False)
+    to_status: Mapped[str] = mapped_column(String(12), nullable=False)
+    # "owner" or "admin" — an administrator overriding an owner is worth seeing.
+    actor_role: Mapped[str] = mapped_column(String(12), nullable=False)
+    # Free text from the reviewer, and the marker for automatic decisions.
+    reason: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, nullable=False)
+
+    __table_args__ = (Index("claim_decisions_claim_idx", "claim_id"),)
+
+
 class ItemMatch(Base):
     """A cached rule-based Smart Match between one lost item and one found item."""
 

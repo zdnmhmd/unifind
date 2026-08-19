@@ -19,6 +19,8 @@ from fastapi.staticfiles import StaticFiles
 
 load_dotenv()
 
+import auth as auth_utils  # noqa: E402  (must load after dotenv)
+import mailer  # noqa: E402  (must load after dotenv)
 from database import init_db  # noqa: E402  (must load after dotenv)
 from routers import admin, auth, claims, comments, dashboard, items, matches, messages, notifications  # noqa: E402
 
@@ -50,7 +52,23 @@ app.add_middleware(
 
 @app.on_event("startup")
 def on_startup() -> None:
+    # Before anything else: a production deploy signing sessions with the key
+    # that ships in the repository is not something to start up and serve.
+    auth_utils.assert_production_secret()
+
     init_db()
+
+    # Confirming an emailed code is the only way to finish a registration, so a
+    # production deploy with no mail server accepts no new members at all. Said
+    # here, at boot, because the alternative is finding out from a student who
+    # cannot sign up. Not fatal: browsing and the seeded accounts still work.
+    if mailer.is_production() and not mailer.smtp_is_configured():
+        print(
+            "[UniFind] WARNING: UNIFIND_ENV=production with no UNIFIND_SMTP_HOST set. "
+            "Confirmation codes cannot be delivered, so nobody can complete a "
+            "registration. Set the UNIFIND_SMTP_* variables.",
+            flush=True,
+        )
 
     # Free hosting tiers hand the service a fresh, empty disk on every restart,
     # which would otherwise leave the demo with an empty database. Seeding here

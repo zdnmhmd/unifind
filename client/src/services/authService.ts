@@ -1,8 +1,15 @@
 import { api } from "./api";
-import type { User, Verification } from "@/types";
+import type { Pending, User, Verification } from "@/types";
 
-/** Registration also starts email confirmation, so it returns more than a user. */
-export type RegisterResult = User & { verification: Verification };
+/**
+ * Registering does not sign anybody in, so there is no member to return — just
+ * the address the code went to. The session arrives from verify() instead.
+ */
+export type RegisterResult = {
+  name: string;
+  email: string;
+  verification: Verification;
+};
 
 export const authService = {
   register: (payload: {
@@ -20,7 +27,10 @@ export const authService = {
   /** Throws ApiError(401) when there is no valid session. */
   me: (signal?: AbortSignal) => api.get<User>("/api/auth/me", signal),
 
-  /** Confirm the UIU address with the six-digit code that was emailed. */
+  /** Who the confirmation screen is waiting on. Throws 401 once it lapses. */
+  pending: (signal?: AbortSignal) => api.get<Pending>("/api/auth/pending", signal),
+
+  /** Confirm the UIU address with the emailed code. This is also the sign-in. */
   verify: (code: string) =>
     api.post<{ user: User; message: string }>("/api/auth/verify", { code }),
 

@@ -212,7 +212,8 @@ Full interactive documentation: **http://127.0.0.1:8000/docs**
 | POST | `/api/auth/login` | Sign in |
 | POST | `/api/auth/logout` | Sign out |
 | GET | `/api/auth/me` | Current member |
-| POST | `/api/auth/verify` | Confirm the UIU email with the six-digit code |
+| GET | `/api/auth/pending` | Who the confirmation screen is waiting on |
+| POST | `/api/auth/verify` | Confirm the UIU email with the code — this is also the sign-in |
 | POST | `/api/auth/resend` | Send a fresh code (once a minute) |
 | GET | `/api/items` | Browse — supports `search`, `type`, `category`, `location`, `status`, `mine`, `sort` |
 | GET | `/api/items/{id}` | Item details |
@@ -269,26 +270,66 @@ changed, and a resolved or withdrawn item drops out of matching entirely.
 
 ---
 
+## 8b. Claim and item state rules
+
+A claim decision is visible to a student and acted on by them, so it is final.
+`review_claim` in [`backend/routers/claims.py`](backend/routers/claims.py)
+enforces one transition and no more:
+
+| Entity | Allowed | Refused |
+| --- | --- | --- |
+| Claim | `submitted → approved`, `submitted → rejected` | anything after a decision (`409`) |
+| Item | `open ↔ pending`, `open/pending → resolved`, `resolved → resolved` | `resolved → open/pending` (`409`) |
+
+Approving a claim also **closes the competing ones**. Every other `submitted`
+claim on that item is rejected in the same transaction and its claimant is
+notified, so one item can never carry two approvals and nobody is left waiting
+on a decision that has already been made. A second approval arriving
+concurrently is refused by an explicit check rather than by timing.
+
+`resolved` is terminal because it is what puts an item in the resolved gallery
+and drops it out of Smart Matching — members are told the case is finished, and
+reopening it would revive a post everybody had stopped watching. Setting the same
+status twice still succeeds, because retries and double-clicks happen.
+
+**Every transition is recorded.** `claim_decisions` stores the claim, the actor,
+their role (`owner` or `admin`), the previous and new status, an optional reason,
+and the timestamp. Rows are only ever inserted. The claim row shows where a claim
+ended up; this shows how it got there, which is what an administrator needs when
+a student disputes a decision. The reason is kept in the audit trail rather than
+shown to the claimant, so a reviewer can be candid.
+
+---
+
 ## 9. Email confirmation
 
-Registering signs the member in straight away, but the account starts
-**unconfirmed**: a six-digit code goes to the UIU address, and `/verify` asks for
-it back.
+Registering creates the account and mails a six-digit code, and **issues no
+session at all**. Entering the correct code on `/verify` is what confirms the
+address *and* signs the member in — one step, so the confirmation can never be
+skipped by closing the tab.
 
-This is a **soft gate**. Reading UniFind — browsing, searching, the dashboard,
-item details — works while unconfirmed, and a banner explains what is missing.
-Anything that creates content other members act on is refused with a `403` until
-the address is confirmed:
+This is a **hard gate**. Nothing in UniFind is reachable while unconfirmed, and
+`/api/auth/me` answers `401` for a registered-but-unconfirmed account.
 
-| Refused until confirmed | Still allowed |
-| --- | --- |
-| Report an item · upload a photo · edit a post | Browse, search, filter, sort |
-| Submit an ownership claim | Item details, Smart Matches |
-| Post a comment | Dashboard, notifications, profile |
-| Start a conversation · send a message | Winding down posts you already own |
+| Cookie | Issued by | Good for |
+| --- | --- | --- |
+| `unifind_session` | `/verify` and `/login` | Everything — this is the sign-in |
+| `unifind_pending` | `/register`, and `/login` for an unconfirmed account | `/api/auth/verify`, `/api/auth/resend`, `/api/auth/pending` — nothing else |
 
-The gate is `get_verified_user` in `backend/auth.py`, applied to those routes
-only. As always the React side is convenience — the API enforces it.
+Both are httpOnly and signed with the same key, so the pending token carries
+`purpose: "verify"` and `get_pending_user` checks it. Without that, a pending
+token would decode perfectly well as a session and hand out an account nobody
+had confirmed.
+
+Signing in with a correct password on an unconfirmed account returns `403` with
+`{"code": "email_unverified"}`, mails a fresh code, and sets the pending cookie —
+so someone who abandoned registration simply signs in to pick it back up. The
+React app reads that `code` and routes to `/verify`.
+
+`get_verified_user` in `backend/auth.py` still guards posting, claiming,
+commenting, and messaging. It should now be unreachable, and stays as the second
+lock: if a session is ever issued before confirmation by mistake, writes still
+refuse it.
 
 **Why a stored code and not a signed link.** A six-digit code is about twenty
 bits: a million guesses, which is nothing. So unlike a JWT link it cannot defend
@@ -310,6 +351,28 @@ and no inbox. Setting the SMTP variables in section 11 switches it to real email
 with no code change. The on-screen code is suppressed when
 `UNIFIND_ENV=production`.
 
+**A production deploy must set the SMTP variables.** The gate is hard, so with no
+mail server nobody can complete a registration — the code has nowhere to go and
+the on-screen fallback is off in production. Three things make that fail safely
+rather than silently:
+
+1. **The backend says so at boot.** `UNIFIND_ENV=production` with no
+   `UNIFIND_SMTP_HOST` logs a warning during startup, so it surfaces in the
+   deploy log instead of in a confused student's registration form. It is not
+   fatal — browsing and the seeded accounts still work.
+2. **An undeliverable registration is rolled back.** If the code cannot be sent,
+   `/register` deletes the account it just created and returns `503`. Otherwise
+   the member would be left with an account that can never be confirmed *and*
+   that blocks their own email from registering again with a `409`. Rolling it
+   back means they simply retry once the mail server is configured.
+3. **The confirmation screen never mentions configuration.** The six-digit code
+   is only ever shown on a development backend. In production an undelivered
+   code shows "The email did not go out" with a resend, not an SMTP note.
+
+Members who registered *before* the mail server was configured recover on their
+own: signing in mails them a fresh code and returns them to the confirmation
+screen.
+
 The four seeded demo accounts are created already confirmed, so the faculty
 demonstration in section 12 never touches this.
 
@@ -320,6 +383,15 @@ demonstration in section 12 never touches this.
 - Passwords are hashed with **bcrypt**. Plain text is never stored, and the hash
   is never returned by the API. Confirmation codes are hashed the same way.
 - Email confirmation is rate limited and attempt capped — see section 9.
+- **The backend refuses to start in production with the development signing
+  key.** `UNIFIND_SECRET_KEY` defaults to a value committed in this repository so
+  local development works out of the box; anyone who can read the repo could use
+  it to forge a session for any account, administrators included. With
+  `UNIFIND_ENV=production` and that default still in place, `assert_production_secret`
+  in [`backend/auth.py`](backend/auth.py) raises at startup rather than serving
+  traffic. This one is fatal, unlike the SMTP warning, because it is not degraded
+  service — it is no authentication at all.
+- Claim decisions are final and audited — see section 8b.
 - The session is a **JWT in an httpOnly cookie**, so page JavaScript cannot read
   it.
 - The **UIU email rule** (`*.uiu.ac.bd`, any department subdomain) is enforced in
@@ -354,7 +426,7 @@ Backend settings are environment variables. Copy `backend/.env.example` to
 | `UNIFIND_ENV` | `development` | Set to `production` to mark the cookie `Secure` (requires HTTPS). |
 | `UNIFIND_UPLOAD_DIR` | `backend/uploads/` | Where item photos are written. |
 | `UNIFIND_ALLOWED_ORIGINS` | — | Extra browser origins allowed to call the API. |
-| `UNIFIND_SMTP_HOST` | — | Mail server for confirmation codes. Unset means the code is printed to the backend console instead. |
+| `UNIFIND_SMTP_HOST` | — | Mail server for confirmation codes. Unset means the code is printed to the backend console instead — fine locally, but a production deploy needs this set or nobody can finish registering. |
 | `UNIFIND_SMTP_PORT` | `587` | 465 is treated as implicit TLS; anything else uses STARTTLS. |
 | `UNIFIND_SMTP_USER` · `UNIFIND_SMTP_PASSWORD` | — | Credentials, if the server needs them. |
 | `UNIFIND_MAIL_FROM` | `UniFind <no-reply@uiu.ac.bd>` | From address on the confirmation email. |
@@ -396,7 +468,7 @@ This proves the full round trip: **React → FastAPI → SQLite → FastAPI → 
 | **Feature 1** — Lost/Found item reporting | Complete, with photo upload |
 | **Feature 2** — Browse, search, filter, sort | Complete |
 | **Feature 3** — Claims &amp; status tracking (`OPEN → PENDING → RESOLVED`) | Complete |
-| Email confirmation (six-digit code + soft gate) | Complete |
+| Email confirmation (six-digit code + hard gate) | Complete |
 | Smart Matching | Complete (rule-based) |
 | Comments | Complete |
 | Private messaging | Complete |
@@ -417,7 +489,8 @@ project features.
 `backend/smoke_test.ps1` exercises the whole API against a running backend — the
 UIU email rule, protected routes, the report → browse → search → claim →
 resolve flow, Smart Matching, ownership rules, privacy of identifying details
-and conversations, admin moderation, and email confirmation with its soft gate. 59 checks.
+and conversations, admin moderation, the claim/item state rules, and email
+confirmation with its hard gate. 72 checks.
 
 With the backend running, from PowerShell:
 

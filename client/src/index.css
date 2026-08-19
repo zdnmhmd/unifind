@@ -2827,42 +2827,7 @@ a.table-title:hover {
   color: var(--accent-strong);
 }
 
-.verify-banner {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  max-width: var(--shell-max);
-  margin: 18px auto 0;
-  padding: 13px 18px;
-  border-radius: var(--radius);
-  /* Pending amber, not the accent: this is a state to resolve, not an action. */
-  background: var(--pending-soft);
-  box-shadow: var(--raise-sm);
-  color: var(--text-secondary);
-  font-size: 14px;
-}
-
-.verify-banner svg {
-  flex-shrink: 0;
-  color: var(--pending);
-}
-
-.verify-banner p {
-  flex: 1;
-  margin: 0;
-}
-
-.verify-banner strong {
-  color: var(--text-primary);
-}
-
 @media (max-width: 720px) {
-  .verify-banner {
-    align-items: flex-start;
-    flex-wrap: wrap;
-    margin: 14px 14px 0;
-  }
-
   .verify-code {
     gap: 7px;
   }

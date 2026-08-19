@@ -3,6 +3,7 @@ import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { ArrowRight, Lock } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/context/AuthContext";
+import { ApiError } from "@/services/api";
 import { FieldError } from "@/components/common/Feedback";
 import { Logo } from "@/components/common/Logo";
 import { isUiuEmail, UIU_EMAIL_ERROR } from "@/constants";
@@ -37,6 +38,17 @@ export function Login() {
       toast.success("Signed in. Welcome back.");
       navigate(redirectTo, { replace: true });
     } catch (error) {
+      // The password was right but the address was never confirmed. The backend
+      // has already mailed a new code and set the pending cookie, so the only
+      // thing left is to show the code screen.
+      if (error instanceof ApiError && error.code === "email_unverified") {
+        toast.info(error.message);
+        navigate("/verify", {
+          replace: true,
+          state: { verification: error.data?.verification },
+        });
+        return;
+      }
       setErrors({ form: (error as Error).message });
     } finally {
       setSubmitting(false);
@@ -49,7 +61,10 @@ export function Login() {
         <Logo />
         <p className="mono-label accent">WELCOME BACK</p>
         <h1>Sign in to your space.</h1>
-        <p className="auth-lede">Use your official UIU account to continue where you left off.</p>
+        <p className="auth-lede">
+          Use your official UIU account to continue where you left off. If your email is not
+          confirmed yet, we will send you a fresh code instead.
+        </p>
 
         <form onSubmit={handleSubmit} noValidate>
           <label className="field">

@@ -34,13 +34,13 @@ export default function App() {
       </Route>
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
+      {/* Email confirmation is public on purpose: registering issues no session,
+          so this page runs on the pending cookie and guards itself. Entering the
+          code is what signs the member in. */}
+      <Route path="/verify" element={<Verify />} />
 
       {/* Authenticated UIU members. */}
       <Route element={<ProtectedRoute />}>
-        {/* Email confirmation stands on its own: signed in, but not yet
-            confirmed, so it deliberately skips the member chrome. */}
-        <Route path="/verify" element={<Verify />} />
-
         <Route element={<MainLayout />}>
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/browse" element={<Browse />} />

@@ -1,12 +1,11 @@
 import { useState, type FormEvent } from "react";
-import { Link, Navigate } from "react-router-dom";
+import { Link, Navigate, useNavigate } from "react-router-dom";
 import { ArrowRight, Lock } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/context/AuthContext";
 import { FieldError } from "@/components/common/Feedback";
 import { Logo } from "@/components/common/Logo";
 import { isUiuEmail, UIU_EMAIL_ERROR } from "@/constants";
-import type { Verification } from "@/types";
 
 type Errors = {
   name?: string;
@@ -18,6 +17,7 @@ type Errors = {
 
 export function Register() {
   const { user, register } = useAuth();
+  const navigate = useNavigate();
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -26,15 +26,9 @@ export function Register() {
   const [confirm, setConfirm] = useState("");
   const [errors, setErrors] = useState<Errors>({});
   const [submitting, setSubmitting] = useState(false);
-  const [verification, setVerification] = useState<Verification | null>(null);
 
-  // Redirecting by render rather than by navigate(): registering signs the
-  // member in, and the `user` guard below would otherwise win the race and drop
-  // them on the dashboard with the confirmation step skipped.
-  if (verification) return <Navigate to="/verify" replace state={{ verification }} />;
-
-  // An unconfirmed member who comes back to /register belongs on the code screen.
-  if (user) return <Navigate to={user.is_verified ? "/dashboard" : "/verify"} replace />;
+  // Already signed in — a session only exists once the email is confirmed.
+  if (user) return <Navigate to="/dashboard" replace />;
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -57,10 +51,11 @@ export function Register() {
         password,
         department: department.trim() || undefined,
       });
-      toast.success("Account created. Confirm your UIU email to finish.");
-      // Handed to the confirmation screen in router state, so it does not have
-      // to ask the server for the details again.
-      setVerification(created.verification);
+      toast.success("Account created. Enter the code we emailed you to finish.");
+      // Straight to the code screen — there is no session yet, so this is the
+      // only way in. The details ride along in router state to save a request;
+      // /verify can also read them back from the pending cookie on a reload.
+      navigate("/verify", { replace: true, state: { verification: created.verification } });
     } catch (error) {
       setErrors({ form: (error as Error).message });
     } finally {
@@ -76,7 +71,7 @@ export function Register() {
         <h1>Join the network.</h1>
         <p className="auth-lede">
           UniFind is restricted to United International University. Register with the email your
-          department issued you.
+          department issued you — we will send a six-digit code there to confirm it is yours.
         </p>
 
         <form onSubmit={handleSubmit} noValidate>

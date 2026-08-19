@@ -33,8 +33,14 @@ $u = Invoke-RestMethod "$base/api/auth/register" -Method Post -ContentType appli
   -Body (@{name="Demo Student";email=$new;password="Password123";department="CSE"} | ConvertTo-Json) `
   -SessionVariable s1
 Check "register accepts *.uiu.ac.bd" ($u.email -eq $new)
-Check "role defaults to user" ($u.role -eq "user")
 Check "password never returned" ($null -eq $u.password_hash)
+# The hard gate: creating the account issues no session, only a pending cookie.
+try {
+  Invoke-RestMethod "$base/api/auth/me" -WebSession $s1 | Out-Null
+  Check "register does NOT sign anybody in" $false "it returned a working session!"
+} catch { Check "register does NOT sign anybody in" ($_.Exception.Response.StatusCode.value__ -eq 401) }
+$waiting = Invoke-RestMethod "$base/api/auth/pending" -WebSession $s1
+Check "the pending cookie names the account" ($waiting.email -eq $new)
 
 Write-Host "`n== 5. Sign in as seeded member (faculty demo step 1) =="
 $s = $null
@@ -163,6 +169,63 @@ Check "item appears in resolved gallery" ($resolved.id -contains $itemId)
 $matchesAfter = Invoke-RestMethod "$base/api/matches" -WebSession $s
 Check "resolved item drops out of matching" (($matchesAfter | Where-Object { $_.own_item.id -eq $itemId }).Count -eq 0)
 
+Write-Host "`n== 14b. Claim and item state machine (spec s10/s15) =="
+# A decided claim is final. Without this the same claim could be flipped between
+# approved and rejected, and two rival claimants could both hold an approval.
+try {
+  Invoke-RestMethod "$base/api/claims/$($claim.id)" -Method Patch -ContentType application/json `
+    -Body (@{status="rejected"} | ConvertTo-Json) -WebSession $s | Out-Null
+  Check "an approved claim cannot be flipped" $false "the decision was reversed!"
+} catch { Check "an approved claim cannot be flipped" ($_.Exception.Response.StatusCode.value__ -eq 409) }
+
+try {
+  Invoke-RestMethod "$base/api/items/$itemId/status" -Method Patch -ContentType application/json `
+    -Body (@{status="open"} | ConvertTo-Json) -WebSession $s | Out-Null
+  Check "a resolved case cannot be reopened" $false "it was reopened!"
+} catch { Check "a resolved case cannot be reopened" ($_.Exception.Response.StatusCode.value__ -eq 409) }
+$stillResolved = Invoke-RestMethod "$base/api/items/$itemId" -WebSession $s
+Check "resolved -> resolved stays idempotent" (
+  (Invoke-RestMethod "$base/api/items/$itemId/status" -Method Patch -ContentType application/json `
+    -Body (@{status="resolved"} | ConvertTo-Json) -WebSession $s).status -eq "resolved")
+
+# Two rivals on one item: approving one must close the other, not leave it open.
+$rival = Invoke-RestMethod "$base/api/items" -Method Post -ContentType application/json -WebSession $s `
+  -Body (@{type="found";title="State machine rival umbrella";category="Other"
+           description="Item used to check that approving one claim closes the others."
+           location="Main Library";date_lost_found="2026-08-18T00:00:00Z"} | ConvertTo-Json)
+$rivalId = $rival.item.id
+$claimA = Invoke-RestMethod "$base/api/items/$rivalId/claims" -Method Post -ContentType application/json `
+  -Body (@{verification_message="Bent spoke and a blue handle, this one is mine."} | ConvertTo-Json) -WebSession $s2
+$claimB = Invoke-RestMethod "$base/api/items/$rivalId/claims" -Method Post -ContentType application/json `
+  -Body (@{verification_message="I left this by the library desk on Tuesday."} | ConvertTo-Json) -WebSession $s3
+Invoke-RestMethod "$base/api/claims/$($claimA.id)" -Method Patch -ContentType application/json `
+  -Body (@{status="approved";reason="Described the bent spoke unprompted."} | ConvertTo-Json) -WebSession $s | Out-Null
+$rivalClaims = (Invoke-RestMethod "$base/api/claims" -WebSession $s) | Where-Object { $_.item_id -eq $rivalId }
+Check "approving one claim closes the rival" (($rivalClaims | Where-Object { $_.id -eq $claimB.id }).status -eq "rejected")
+Check "only one approved claim per item" ((($rivalClaims | Where-Object { $_.status -eq "approved" }) | Measure-Object).Count -eq 1)
+try {
+  Invoke-RestMethod "$base/api/claims/$($claimB.id)" -Method Patch -ContentType application/json `
+    -Body (@{status="approved"} | ConvertTo-Json) -WebSession $s | Out-Null
+  Check "a closed rival cannot be approved later" $false "a second approval landed!"
+} catch { Check "a closed rival cannot be approved later" ($_.Exception.Response.StatusCode.value__ -eq 409) }
+Invoke-RestMethod "$base/api/items/$rivalId" -Method Delete -WebSession $s | Out-Null
+
+Write-Host "`n== 14c. Update payloads are normalised like creates =="
+$normItem = Invoke-RestMethod "$base/api/items" -Method Post -ContentType application/json -WebSession $s `
+  -Body (@{type="lost";title="Whitespace probe notebook";category="Other"
+           description="Item used to check that PUT trims exactly like POST does."
+           location="Cafeteria";date_lost_found="2026-08-18T00:00:00Z"} | ConvertTo-Json)
+$normId = $normItem.item.id
+$trimmed = Invoke-RestMethod "$base/api/items/$normId" -Method Put -ContentType application/json `
+  -Body (@{location="   Student Center   "} | ConvertTo-Json) -WebSession $s
+Check "update trims padded values" ($trimmed.location -eq "Student Center")
+try {
+  Invoke-RestMethod "$base/api/items/$normId" -Method Put -ContentType application/json `
+    -Body (@{title="       "} | ConvertTo-Json) -WebSession $s | Out-Null
+  Check "update rejects whitespace-only values" $false "it was stored!"
+} catch { Check "update rejects whitespace-only values" ($_.Exception.Response.StatusCode.value__ -eq 422) }
+Invoke-RestMethod "$base/api/items/$normId" -Method Delete -WebSession $s | Out-Null
+
 Write-Host "`n== 15. Admin dashboard + moderation (spec s27-28) =="
 $sa = $null
 Invoke-RestMethod "$base/api/auth/login" -Method Post -ContentType application/json `
@@ -185,21 +248,22 @@ Invoke-RestMethod "$base/api/auth/logout" -Method Post -WebSession $s | Out-Null
 try { Invoke-RestMethod "$base/api/auth/me" -WebSession $s | Out-Null; Check "logout invalidates session" $false "still signed in!" }
 catch { Check "logout invalidates session" ($_.Exception.Response.StatusCode.value__ -eq 401) }
 
-Write-Host "`n== 17. Email confirmation + the soft gate (spec s5) =="
+Write-Host "`n== 17. Email confirmation + the hard gate (spec s5) =="
 $vEmail = "verify$(Get-Random -Max 99999)@bscse.uiu.ac.bd"
 $sv = $null
 $vUser = Invoke-RestMethod "$base/api/auth/register" -Method Post -ContentType application/json `
   -Body (@{name="Verify Student";email=$vEmail;password="Password123"} | ConvertTo-Json) `
   -SessionVariable sv
-Check "new member starts unconfirmed" ($vUser.is_verified -eq $false)
 
 # Development builds return the code so this runs with no SMTP server.
 $code = $vUser.verification.dev_code
 Check "registration issues a six-digit code" ($code -match '^\d{6}$')
 
-# Soft gate: reading stays open, writing does not.
-$browse = Invoke-RestMethod "$base/api/items" -WebSession $sv
-Check "unconfirmed member can still browse" ($browse.Count -gt 0)
+# Hard gate: the pending cookie opens nothing, not even reading.
+foreach ($p in @("/api/items","/api/dashboard")) {
+  try { Invoke-RestMethod "$base$p" -WebSession $sv | Out-Null; Check "pending cookie cannot read $p" $false "it was allowed!" }
+  catch { Check "pending cookie cannot read $p" ($_.Exception.Response.StatusCode.value__ -eq 401) }
+}
 
 $vBody = @{
   type="lost"; title="Unconfirmed test item"; category="Other"
@@ -209,7 +273,7 @@ $vBody = @{
 try {
   Invoke-RestMethod "$base/api/items" -Method Post -ContentType application/json -Body $vBody -WebSession $sv | Out-Null
   Check "unconfirmed member cannot post" $false "the post was accepted!"
-} catch { Check "unconfirmed member cannot post" ($_.Exception.Response.StatusCode.value__ -eq 403) }
+} catch { Check "unconfirmed member cannot post" ($_.Exception.Response.StatusCode.value__ -eq 401) }
 
 try {
   Invoke-RestMethod "$base/api/auth/verify" -Method Post -ContentType application/json `
@@ -226,8 +290,31 @@ $confirmed = Invoke-RestMethod "$base/api/auth/verify" -Method Post -ContentType
   -Body (@{code=$code} | ConvertTo-Json) -WebSession $sv
 Check "the correct code confirms the account" ($confirmed.user.is_verified -eq $true)
 
+# Confirming is also the sign-in: the same session now works everywhere.
+$vMe = Invoke-RestMethod "$base/api/auth/me" -WebSession $sv
+Check "confirming the code signs the member in" ($vMe.email -eq $vEmail)
+
 $vItem = Invoke-RestMethod "$base/api/items" -Method Post -ContentType application/json -Body $vBody -WebSession $sv
 Check "confirmed member can post" ($vItem.item.id -gt 0)
+
+# Signing in with the right password but an unconfirmed address hands back a
+# fresh code instead of a session. Its own account, because the new code would
+# otherwise invalidate the one used above.
+$lEmail = "lapsed$(Get-Random -Max 99999)@bscse.uiu.ac.bd"
+Invoke-RestMethod "$base/api/auth/register" -Method Post -ContentType application/json `
+  -Body (@{name="Lapsed Student";email=$lEmail;password="Password123"} | ConvertTo-Json) | Out-Null
+$sl = $null
+try {
+  Invoke-RestMethod "$base/api/auth/login" -Method Post -ContentType application/json `
+    -Body (@{email=$lEmail;password="Password123"} | ConvertTo-Json) -SessionVariable sl | Out-Null
+  Check "unconfirmed login is refused" $false "it signed in!"
+} catch { Check "unconfirmed login is refused" ($_.Exception.Response.StatusCode.value__ -eq 403) }
+try {
+  Invoke-RestMethod "$base/api/auth/me" -WebSession $sl | Out-Null
+  Check "the refusal issues no session" $false "it signed in anyway!"
+} catch { Check "the refusal issues no session" ($_.Exception.Response.StatusCode.value__ -eq 401) }
+$lWaiting = Invoke-RestMethod "$base/api/auth/pending" -WebSession $sl
+Check "the refusal sets a pending cookie instead" ($lWaiting.email -eq $lEmail)
 
 Write-Host "`n========================================"
 Write-Host "  PASSED: $pass    FAILED: $fail"

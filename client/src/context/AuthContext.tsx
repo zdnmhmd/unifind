@@ -17,7 +17,10 @@ type AuthValue = {
   loading: boolean;
   isAdmin: boolean;
   login: (email: string, password: string) => Promise<User>;
-  /** Resolves with the new member plus the confirmation-code details. */
+  /**
+   * Creates the account and starts email confirmation. It does NOT sign anybody
+   * in — `user` stays null until the code is confirmed on /verify.
+   */
   register: (payload: {
     name: string;
     email: string;
@@ -59,9 +62,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const register = useCallback(
     async (payload: { name: string; email: string; password: string; department?: string }) => {
-      const created = await authService.register(payload);
-      setUser(created);
-      return created;
+      // Deliberately no setUser: the backend issues no session here, so claiming
+      // one locally would only produce a signed-in UI over 401s from the API.
+      return authService.register(payload);
     },
     []
   );

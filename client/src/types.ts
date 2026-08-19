@@ -16,6 +16,13 @@ export type User = {
   created_at: string;
 };
 
+/** Who the confirmation screen is waiting on, read back from the pending cookie. */
+export type Pending = {
+  name: string;
+  email: string;
+  expires_in_minutes: number;
+};
+
 export type Verification = {
   /** False when the backend has no SMTP server — the code went to its console. */
   sent: boolean;

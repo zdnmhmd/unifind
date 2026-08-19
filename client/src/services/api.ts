@@ -15,11 +15,17 @@ export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
 
 export class ApiError extends Error {
   status: number;
+  /** Machine-readable tag when the backend sent one, e.g. "email_unverified". */
+  code?: string;
+  /** Anything else the backend attached to a structured `detail`. */
+  data?: Record<string, unknown>;
 
-  constructor(message: string, status: number) {
+  constructor(message: string, status: number, code?: string, data?: Record<string, unknown>) {
     super(message);
     this.name = "ApiError";
     this.status = status;
+    this.code = code;
+    this.data = data;
   }
 }
 
@@ -62,10 +68,16 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   const payload = await response.json().catch(() => null);
 
   if (!response.ok) {
-    const detail =
-      (payload && typeof payload.detail === "string" && payload.detail) ||
+    // FastAPI puts the reason in `detail`. Usually a plain sentence, but routes
+    // the app has to branch on send an object instead: {code, message, ...}.
+    // (Validation failures make it a list, which falls through to the default.)
+    const raw = payload?.detail;
+    const structured = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : null;
+    const message =
+      (typeof raw === "string" && raw) ||
+      (typeof structured?.message === "string" && structured.message) ||
       "Something went wrong. Please try again.";
-    throw new ApiError(detail, response.status);
+    throw new ApiError(message, response.status, structured?.code, structured ?? undefined);
   }
 
   return payload as T;

@@ -230,6 +230,19 @@ def set_item_status(
     item = _get_item_or_404(db, item_id)
     _require_owner(item, user)
 
+    # RESOLVED is the end of the case. It is what puts the item in the resolved
+    # gallery and drops it out of matching, and members act on that — reopening
+    # it later would revive a post everybody was told was finished. Setting the
+    # same status twice stays fine, because retries and double clicks happen.
+    if item.status == "resolved" and payload.status != "resolved":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                "This case is already resolved and cannot be reopened. "
+                "Post a new report if the item goes missing again."
+            ),
+        )
+
     item.status = payload.status
     db.commit()
     db.refresh(item)
