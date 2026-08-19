@@ -6,6 +6,12 @@ function Check($name, $cond, $extra="") {
   else { Write-Host "  FAIL  $name  $extra" -ForegroundColor Red; $script:fail++ }
 }
 
+# Registration behaves differently depending on whether email confirmation is
+# switched on, so ask the backend which mode it is in rather than assuming.
+$health = Invoke-RestMethod "$base/api/health"
+$confirmEmail = [bool]$health.email_confirmation
+Write-Host "`nEmail confirmation: $(if ($confirmEmail) { 'ON (hard gate)' } else { 'OFF (registering signs in)' })"
+
 Write-Host "`n== 1. UIU email rule (spec s5) =="
 foreach ($bad in @("student@gmail.com","student@yahoo.com","student@outlook.com")) {
   try {
@@ -34,13 +40,23 @@ $u = Invoke-RestMethod "$base/api/auth/register" -Method Post -ContentType appli
   -SessionVariable s1
 Check "register accepts *.uiu.ac.bd" ($u.email -eq $new)
 Check "password never returned" ($null -eq $u.password_hash)
-# The hard gate: creating the account issues no session, only a pending cookie.
-try {
-  Invoke-RestMethod "$base/api/auth/me" -WebSession $s1 | Out-Null
-  Check "register does NOT sign anybody in" $false "it returned a working session!"
-} catch { Check "register does NOT sign anybody in" ($_.Exception.Response.StatusCode.value__ -eq 401) }
-$waiting = Invoke-RestMethod "$base/api/auth/pending" -WebSession $s1
-Check "the pending cookie names the account" ($waiting.email -eq $new)
+
+if ($confirmEmail) {
+  # The hard gate: creating the account issues no session, only a pending cookie.
+  try {
+    Invoke-RestMethod "$base/api/auth/me" -WebSession $s1 | Out-Null
+    Check "register does NOT sign anybody in" $false "it returned a working session!"
+  } catch { Check "register does NOT sign anybody in" ($_.Exception.Response.StatusCode.value__ -eq 401) }
+  $waiting = Invoke-RestMethod "$base/api/auth/pending" -WebSession $s1
+  Check "the pending cookie names the account" ($waiting.email -eq $new)
+} else {
+  # Confirmation off: registering is the sign-in, and the account is usable now.
+  Check "register returns the signed-in member" ($u.user.email -eq $new)
+  Check "no confirmation code is issued" ($null -eq $u.verification)
+  $whoNew = Invoke-RestMethod "$base/api/auth/me" -WebSession $s1
+  Check "register signs the member straight in" ($whoNew.email -eq $new)
+  Check "the account is usable immediately" ($whoNew.is_verified -eq $true)
+}
 
 Write-Host "`n== 5. Sign in as seeded member (faculty demo step 1) =="
 $s = $null
@@ -249,6 +265,25 @@ try { Invoke-RestMethod "$base/api/auth/me" -WebSession $s | Out-Null; Check "lo
 catch { Check "logout invalidates session" ($_.Exception.Response.StatusCode.value__ -eq 401) }
 
 Write-Host "`n== 17. Email confirmation + the hard gate (spec s5) =="
+if (-not $confirmEmail) {
+  # Switched off, so there is no code to check. What must hold instead is that
+  # the confirmation endpoints are genuinely inert rather than half-alive.
+  foreach ($p in @("/api/auth/pending")) {
+    try { Invoke-RestMethod "$base$p" | Out-Null; Check "confirmation is off: $p is inert" $false "it answered!" }
+    catch { Check "confirmation is off: $p is inert" ($_.Exception.Response.StatusCode.value__ -eq 404) }
+  }
+  try {
+    Invoke-RestMethod "$base/api/auth/verify" -Method Post -ContentType application/json `
+      -Body (@{code="123456"} | ConvertTo-Json) | Out-Null
+    Check "confirmation is off: /verify is inert" $false "it answered!"
+  } catch { Check "confirmation is off: /verify is inert" ($_.Exception.Response.StatusCode.value__ -eq 404) }
+  try {
+    Invoke-RestMethod "$base/api/auth/resend" -Method Post | Out-Null
+    Check "confirmation is off: /resend is inert" $false "it answered!"
+  } catch { Check "confirmation is off: /resend is inert" ($_.Exception.Response.StatusCode.value__ -eq 404) }
+  Write-Host "  SKIP  the six-digit gate checks (set UNIFIND_REQUIRE_EMAIL_CONFIRMATION=true to run them)"
+} else {
+
 $vEmail = "verify$(Get-Random -Max 99999)@bscse.uiu.ac.bd"
 $sv = $null
 $vUser = Invoke-RestMethod "$base/api/auth/register" -Method Post -ContentType application/json `
@@ -315,6 +350,8 @@ try {
 } catch { Check "the refusal issues no session" ($_.Exception.Response.StatusCode.value__ -eq 401) }
 $lWaiting = Invoke-RestMethod "$base/api/auth/pending" -WebSession $sl
 Check "the refusal sets a pending cookie instead" ($lWaiting.email -eq $lEmail)
+
+}
 
 Write-Host "`n========================================"
 Write-Host "  PASSED: $pass    FAILED: $fail"

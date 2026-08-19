@@ -88,14 +88,19 @@ class VerificationOut(BaseModel):
 
 
 class RegisterResponse(BaseModel):
-    """Registration does not sign anybody in, so there is no member to return.
+    """What registering produced — and exactly one of the two will be filled in.
 
-    Only what the confirmation screen needs to introduce itself.
+    With email confirmation switched off, `user` is the signed-in member and the
+    session cookie came with this response. With it on, registering signs nobody
+    in: `verification` describes the code that was sent, and the browser holds
+    only the pending cookie. The React app branches on which one it got, so the
+    two flows need no separate flag of their own.
     """
 
     name: str
     email: str
-    verification: VerificationOut
+    user: UserOut | None = None
+    verification: VerificationOut | None = None
 
 
 class PendingOut(BaseModel):

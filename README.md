@@ -212,7 +212,7 @@ Full interactive documentation: **http://127.0.0.1:8000/docs**
 | POST | `/api/auth/login` | Sign in |
 | POST | `/api/auth/logout` | Sign out |
 | GET | `/api/auth/me` | Current member |
-| GET | `/api/auth/pending` | Who the confirmation screen is waiting on |
+| GET | `/api/auth/pending` | Who the confirmation screen is waiting on (404 when confirmation is off) |
 | POST | `/api/auth/verify` | Confirm the UIU email with the code — this is also the sign-in |
 | POST | `/api/auth/resend` | Send a fresh code (once a minute) |
 | GET | `/api/items` | Browse — supports `search`, `type`, `category`, `location`, `status`, `mine`, `sort` |
@@ -303,7 +303,22 @@ shown to the claimant, so a reviewer can be candid.
 
 ## 9. Email confirmation
 
-Registering creates the account and mails a six-digit code, and **issues no
+> **Currently switched OFF.** `UNIFIND_REQUIRE_EMAIL_CONFIRMATION` defaults to
+> `false`, so registering signs the member straight in and no code is issued or
+> sent. Nothing described in this section runs until it is switched back on:
+>
+> ```
+> UNIFIND_REQUIRE_EMAIL_CONFIRMATION=true
+> ```
+>
+> It was turned off because the project has no working mail server yet — with
+> the gate on and no SMTP, nobody can complete a registration at all. The whole
+> flow below is still in the codebase and still tested; turn it back on (and
+> check the SMTP settings work) before submitting if the spec requires confirmed
+> addresses. `GET /api/health` reports which mode a running backend is in.
+
+**With confirmation on**, registering creates the account and mails a six-digit
+code, and **issues no
 session at all**. Entering the correct code on `/verify` is what confirms the
 address *and* signs the member in — one step, so the confirmation can never be
 skipped by closing the tab.
@@ -426,6 +441,7 @@ Backend settings are environment variables. Copy `backend/.env.example` to
 | `UNIFIND_ENV` | `development` | Set to `production` to mark the cookie `Secure` (requires HTTPS). |
 | `UNIFIND_UPLOAD_DIR` | `backend/uploads/` | Where item photos are written. |
 | `UNIFIND_ALLOWED_ORIGINS` | — | Extra browser origins allowed to call the API. |
+| `UNIFIND_REQUIRE_EMAIL_CONFIRMATION` | `false` | Whether a new member must confirm an emailed code before their account works. Off means registering signs them straight in. See section 9. |
 | `UNIFIND_SMTP_HOST` | — | Mail server for confirmation codes. Unset means the code is printed to the backend console instead — fine locally, but a production deploy needs this set or nobody can finish registering. |
 | `UNIFIND_SMTP_PORT` | `587` | 465 is treated as implicit TLS; anything else uses STARTTLS. |
 | `UNIFIND_SMTP_USER` · `UNIFIND_SMTP_PASSWORD` | — | Credentials, if the server needs them. |
@@ -490,7 +506,10 @@ project features.
 UIU email rule, protected routes, the report → browse → search → claim →
 resolve flow, Smart Matching, ownership rules, privacy of identifying details
 and conversations, admin moderation, the claim/item state rules, and email
-confirmation with its hard gate. 72 checks.
+confirmation. It reads `GET /api/health` and checks whichever registration mode
+the backend is running: **65 checks** with confirmation off (the default), and
+**72** with `UNIFIND_REQUIRE_EMAIL_CONFIRMATION=true`, which adds the six-digit
+gate.
 
 With the backend running, from PowerShell:
 

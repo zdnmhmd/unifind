@@ -2,13 +2,17 @@ import { api } from "./api";
 import type { Pending, User, Verification } from "@/types";
 
 /**
- * Registering does not sign anybody in, so there is no member to return — just
- * the address the code went to. The session arrives from verify() instead.
+ * Exactly one of `user` and `verification` comes back.
+ *
+ * With email confirmation off, `user` is the signed-in member — registering is
+ * the sign-in. With it on, registering signs nobody in and `verification`
+ * describes the code that was sent; the session arrives from verify() instead.
  */
 export type RegisterResult = {
   name: string;
   email: string;
-  verification: Verification;
+  user: User | null;
+  verification: Verification | null;
 };
 
 export const authService = {

@@ -80,16 +80,37 @@ def register(payload: RegisterRequest, response: Response, db: Session = Depends
             detail="An account already exists for this UIU email. Try signing in instead.",
         )
 
+    confirmation_required = auth_utils.REQUIRE_EMAIL_CONFIRMATION
+    now = datetime.now(timezone.utc)
+
     user = User(
         name=payload.name.strip(),
         email=payload.email,
         password_hash=auth_utils.hash_password(payload.password),
         department=(payload.department or "").strip() or None,
         role="user",
+        # With confirmation switched off there is no step that could ever set
+        # this later, so the account is created settled rather than left in a
+        # pending state nothing will resolve.
+        is_verified=not confirmation_required,
+        verified_at=None if confirmation_required else now,
     )
     db.add(user)
     db.commit()
     db.refresh(user)
+
+    if not confirmation_required:
+        # No code, no waiting: creating the account signs the member in.
+        user.last_signed_in = now
+        db.commit()
+        db.refresh(user)
+        auth_utils.set_session_cookie(response, auth_utils.create_session_token(user))
+        return RegisterResponse(
+            name=user.name,
+            email=user.email,
+            user=UserOut.model_validate(user),
+            verification=None,
+        )
 
     verification = _issue_and_send(db, user)
 
@@ -112,7 +133,9 @@ def register(payload: RegisterRequest, response: Response, db: Session = Depends
     # gets is the pending cookie, which /verify and /resend accept and nothing
     # else does.
     auth_utils.set_pending_cookie(response, auth_utils.create_pending_token(user))
-    return RegisterResponse(name=user.name, email=user.email, verification=verification)
+    return RegisterResponse(
+        name=user.name, email=user.email, user=None, verification=verification
+    )
 
 
 @router.post("/login", response_model=UserOut)
@@ -133,7 +156,7 @@ def login(payload: LoginRequest, response: Response, db: Session = Depends(get_d
             detail="This account is suspended. Contact the UniFind administrators.",
         )
 
-    if not user.is_verified:
+    if auth_utils.REQUIRE_EMAIL_CONFIRMATION and not user.is_verified:
         # Right password, unconfirmed address: mail a fresh code and hand back a
         # pending cookie rather than a session. The password was correct, so
         # this leaks nothing that the caller did not already know.
@@ -181,8 +204,24 @@ def me(user: User = Depends(auth_utils.get_current_user)):
     return user
 
 
+# Confirmation is switched off, so these three endpoints have nothing to act on.
+# 404 rather than 403: the feature is absent, not forbidden.
+_CONFIRMATION_OFF = HTTPException(
+    status_code=status.HTTP_404_NOT_FOUND,
+    detail="Email confirmation is not enabled on this UniFind deployment.",
+)
+
+
+def _require_confirmation_enabled() -> None:
+    if not auth_utils.REQUIRE_EMAIL_CONFIRMATION:
+        raise _CONFIRMATION_OFF
+
+
 @router.get("/pending", response_model=PendingOut)
-def pending(user: User = Depends(auth_utils.get_pending_user)):
+def pending(
+    _: None = Depends(_require_confirmation_enabled),
+    user: User = Depends(auth_utils.get_pending_user),
+):
     """Who the confirmation screen is waiting on.
 
     Read straight from the pending cookie, so reloading /verify does not lose
@@ -197,6 +236,7 @@ def pending(user: User = Depends(auth_utils.get_pending_user)):
 def verify_email(
     payload: VerifyCodeRequest,
     response: Response,
+    _: None = Depends(_require_confirmation_enabled),
     user: User = Depends(auth_utils.get_pending_user),
     db: Session = Depends(get_db),
 ):
@@ -276,6 +316,7 @@ def verify_email(
 
 @router.post("/resend", response_model=VerificationOut)
 def resend_verification(
+    _: None = Depends(_require_confirmation_enabled),
     user: User = Depends(auth_utils.get_pending_user),
     db: Session = Depends(get_db),
 ):

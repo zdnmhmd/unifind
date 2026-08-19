@@ -38,6 +38,15 @@ SESSION_DAYS = 7
 IS_PRODUCTION = os.getenv("UNIFIND_ENV", "development").lower() == "production"
 
 # Email confirmation (spec section 5).
+#
+# Turned OFF by default while the project has no working mail server. With it
+# off, registering signs the member straight in and no code is ever issued —
+# the whole confirmation flow below stays in the codebase but is never reached.
+# Set UNIFIND_REQUIRE_EMAIL_CONFIRMATION=true to put the gate back.
+REQUIRE_EMAIL_CONFIRMATION = os.getenv(
+    "UNIFIND_REQUIRE_EMAIL_CONFIRMATION", "false"
+).lower() in {"1", "true", "yes"}
+
 CODE_TTL_MINUTES = 10
 MAX_CODE_ATTEMPTS = 5
 RESEND_COOLDOWN_SECONDS = 60
@@ -311,13 +320,16 @@ def assert_production_secret() -> None:
 
 
 def get_verified_user(user: User = Depends(get_current_user)) -> User:
-    """Require a confirmed UIU email.
+    """Require a confirmed UIU email, when confirmation is switched on.
 
-    A session is now only ever issued after confirmation, so this should never
-    fire. It stays as the second lock: if a session is ever handed out earlier
-    by mistake, posting and claiming still refuse it.
+    With REQUIRE_EMAIL_CONFIRMATION off this is just get_current_user — there is
+    no confirmation step, so gating on its result would lock out every account.
+
+    With it on, a session is only ever handed out after confirmation, so this
+    should never fire. It stays as the second lock: if a session is ever handed
+    out earlier by mistake, posting and claiming still refuse it.
     """
-    if not user.is_verified:
+    if REQUIRE_EMAIL_CONFIRMATION and not user.is_verified:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Confirm your UIU email before posting. Check your inbox for the code.",

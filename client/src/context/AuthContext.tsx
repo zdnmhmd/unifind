@@ -18,8 +18,9 @@ type AuthValue = {
   isAdmin: boolean;
   login: (email: string, password: string) => Promise<User>;
   /**
-   * Creates the account and starts email confirmation. It does NOT sign anybody
-   * in — `user` stays null until the code is confirmed on /verify.
+   * Creates the account. Whether that also signs the member in depends on the
+   * backend: with email confirmation off it does, and with it on `user` stays
+   * null until the code is confirmed on /verify.
    */
   register: (payload: {
     name: string;
@@ -62,9 +63,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const register = useCallback(
     async (payload: { name: string; email: string; password: string; department?: string }) => {
-      // Deliberately no setUser: the backend issues no session here, so claiming
-      // one locally would only produce a signed-in UI over 401s from the API.
-      return authService.register(payload);
+      const created = await authService.register(payload);
+      // Only when the backend actually issued a session. Claiming one locally
+      // otherwise would produce a signed-in UI sitting on top of 401s.
+      if (created.user) setUser(created.user);
+      return created;
     },
     []
   );

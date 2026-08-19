@@ -58,11 +58,18 @@ def on_startup() -> None:
 
     init_db()
 
-    # Confirming an emailed code is the only way to finish a registration, so a
-    # production deploy with no mail server accepts no new members at all. Said
-    # here, at boot, because the alternative is finding out from a student who
-    # cannot sign up. Not fatal: browsing and the seeded accounts still work.
-    if mailer.is_production() and not mailer.smtp_is_configured():
+    # Only worth saying when confirmation is actually switched on. With it off,
+    # registering never sends anything, so a missing mail server costs nothing.
+    #
+    # With it on, confirming an emailed code is the only way to finish a
+    # registration, so a production deploy with no mail server accepts no new
+    # members at all. Said here, at boot, because the alternative is finding out
+    # from a student who cannot sign up. Not fatal: browsing still works.
+    if (
+        auth_utils.REQUIRE_EMAIL_CONFIRMATION
+        and mailer.is_production()
+        and not mailer.smtp_is_configured()
+    ):
         print(
             "[UniFind] WARNING: UNIFIND_ENV=production with no UNIFIND_SMTP_HOST set. "
             "Confirmation codes cannot be delivered, so nobody can complete a "
@@ -118,7 +125,13 @@ app.include_router(admin.router)
 
 @app.get("/api/health", tags=["system"])
 def health():
-    return {"status": "ok", "service": "UniFind API"}
+    return {
+        "status": "ok",
+        "service": "UniFind API",
+        # Registration behaves differently depending on this, so the smoke test
+        # reads it here rather than guessing which flow it is looking at.
+        "email_confirmation": auth_utils.REQUIRE_EMAIL_CONFIRMATION,
+    }
 
 
 # --- Static frontend -------------------------------------------------------
