@@ -9,6 +9,7 @@ import { ItemCard } from "@/components/items/ItemCard";
 import { EmptyState, ErrorMessage, SkeletonGrid } from "@/components/common/Feedback";
 import { useDebounced } from "@/hooks/useDebounced";
 import type { ItemFilters, ItemStatus, ItemType, SortOrder } from "@/types";
+import FadeContent from "@/components/reactbits/FadeContent";
 
 /**
  * Browse, search, filter and sort — FEATURE 2 (spec section 19).
@@ -95,8 +96,18 @@ export function Browse() {
         <SkeletonGrid />
       ) : items.length > 0 ? (
         <div className="item-grid">
-          {items.map(item => (
-            <ItemCard item={item} key={item.id} />
+          {items.map((item, index) => (
+            /* Results arrive together, so the stagger is capped: past the first
+               screenful a longer delay would just look like a slow page. */
+            <FadeContent
+              key={item.id}
+              blur
+              duration={420}
+              delay={Math.min(index, 8) * 60}
+              threshold={0.15}
+            >
+              <ItemCard item={item} />
+            </FadeContent>
           ))}
         </div>
       ) : (

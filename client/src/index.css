@@ -2872,3 +2872,331 @@ a.table-title:hover {
     font-size: 21px;
   }
 }
+
+/* --------------------------------------------------------------------------
+   22. React Bits adaptations
+
+   The vendored components in components/reactbits/ ship their own CSS written
+   for a dark theme — #111 panels, white text, 1px borders. None of that suits
+   a light paper chassis lit from the top-left, so every visual decision is
+   re-made here against the tokens in section 1.
+
+   Upstream files stay untouched so they can be diffed against a newer release.
+   That means load order is not guaranteed, so each override is written with two
+   classes (or a scope) to out-specify the single-class upstream rule whatever
+   order the bundler emits.
+   -------------------------------------------------------------------------- */
+
+/* --- Spotlight Card: item cards and match cards ------------------------- */
+
+/* Upstream paints a dark panel. Here the card keeps the chassis surface and
+   the spotlight becomes a warm bloom in the accent, as if the pointer were a
+   lamp passing over paper. */
+.card-spotlight.uf-spotlight {
+  border: none;
+  border-radius: var(--radius);
+  background-color: transparent;
+  padding: 0;
+}
+
+.card-spotlight.uf-spotlight::before {
+  border-radius: inherit;
+  /* Sits above the card surface but below its content. */
+  z-index: 1;
+  transition: opacity 320ms var(--ease);
+}
+
+.card-spotlight.uf-spotlight:hover::before,
+.card-spotlight.uf-spotlight:focus-within::before {
+  opacity: 0.9;
+}
+
+.card-spotlight.uf-spotlight > * {
+  position: relative;
+  z-index: 2;
+}
+
+/* --- Animated List: the notifications feed ------------------------------ */
+
+/* AnimatedItem carries its own inline margin-bottom, which no stylesheet can
+   override. Dropping the grid gap avoids stacking the two and leaves the rows
+   evenly spaced by the wrapper alone. */
+.notification-page-list.uf-animated-list {
+  gap: 0;
+}
+
+/* --- Count Up: statistics ----------------------------------------------- */
+
+/* The figures already use JetBrains Mono at a large size. Tabular numerals stop
+   the digits from reflowing as the count climbs, which would otherwise make the
+   whole tile jitter for the length of the animation. */
+.stat-value .uf-countup,
+.uf-countup {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+/* --- Shiny Text: the home hero accent ----------------------------------- */
+.shiny-text.uf-shine {
+  display: inline;
+  font-weight: inherit;
+  font-size: inherit;
+  letter-spacing: inherit;
+}
+
+/* --- Scroll Reveal: home sections --------------------------------------- */
+
+/* Upstream sets a 4rem clamp for a marketing headline. These are section
+   paragraphs, so the type scale comes from the surrounding layout instead. */
+.scroll-reveal.uf-reveal {
+  /* This IS the section heading, so it takes the same spacing an <h2> would. */
+  margin: 8px 0 0;
+}
+
+.scroll-reveal.uf-reveal .scroll-reveal-text {
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: inherit;
+}
+
+/* --- Magnet: primary calls to action ------------------------------------ */
+
+/* The wrapper must not become a layout box of its own, or it would break the
+   button rows it sits inside. */
+.uf-magnet {
+  display: inline-flex;
+}
+
+.uf-magnet > div {
+  display: inline-flex;
+}
+
+/* --- Tilted Card: the leading Smart Match ------------------------------- */
+.uf-tilted .tilted-card-figure {
+  /* Upstream centres a bare image; this one sits in a raised panel. */
+  border-radius: var(--radius);
+}
+
+.uf-tilted .tilted-card-img {
+  border-radius: var(--radius);
+  box-shadow: var(--raise);
+  object-fit: cover;
+  background: var(--surface-recessed);
+}
+
+.uf-tilted .tilted-card-caption {
+  padding: 5px 11px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised);
+  box-shadow: var(--raise-sm);
+  color: var(--text-secondary);
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.uf-tilted .tilted-card-mobile-alert {
+  display: none;
+}
+
+/* --- Masonry: the resolved gallery -------------------------------------- */
+.uf-masonry .item-img {
+  border-radius: var(--radius);
+  box-shadow: var(--raise-sm);
+  background-color: var(--surface-recessed);
+  background-size: cover;
+  background-position: center;
+}
+
+/* --- Stack: the home page visual ---------------------------------------- */
+.uf-stack .card {
+  border: none;
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  box-shadow: var(--raise);
+  overflow: hidden;
+}
+
+/* --- Dock: dashboard quick actions -------------------------------------- */
+.uf-dock .dock-panel {
+  border: none;
+  border-radius: var(--radius-lg);
+  background: var(--surface-raised);
+  box-shadow: var(--raise);
+}
+
+.uf-dock .dock-item {
+  border: none;
+  background: var(--surface-recessed);
+  box-shadow: var(--recess-sm);
+  color: var(--text-secondary);
+  transition: color var(--speed) var(--ease), box-shadow var(--speed) var(--ease);
+}
+
+.uf-dock .dock-item:hover {
+  color: var(--accent-strong);
+  box-shadow: var(--press);
+}
+
+.uf-dock .dock-label {
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised);
+  box-shadow: var(--raise-sm);
+  color: var(--text-primary);
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* --- Drift Wall: the home hero ------------------------------------------ */
+
+/* The wall is decoration behind the hero copy, so it must never take the
+   pointer or announce itself to a screen reader (the markup sets aria-hidden). */
+.uf-driftwall {
+  pointer-events: none;
+}
+
+.uf-driftwall .drift-wall__tile {
+  border-radius: var(--radius);
+  box-shadow: var(--raise-sm);
+}
+
+/* Fades the wall into the page background on all four edges, so it reads as
+   depth behind the hero rather than a panel stuck onto it. */
+.uf-driftwall .drift-wall__overlay {
+  background:
+    linear-gradient(to bottom, var(--chassis) 0%, transparent 26%, transparent 74%, var(--chassis) 100%),
+    linear-gradient(to right, var(--chassis) 0%, transparent 22%, transparent 78%, var(--chassis) 100%);
+}
+
+/* --------------------------------------------------------------------------
+   Motion preference
+
+   Every component above animates on load or on scroll. Honour the OS setting:
+   the content still arrives, it simply arrives without movement.
+   -------------------------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  .uf-driftwall,
+  .uf-stack,
+  .shiny-text.uf-shine {
+    animation: none !important;
+  }
+
+  .uf-driftwall .drift-wall__track {
+    transform: none !important;
+  }
+
+  .card-spotlight.uf-spotlight::before {
+    display: none;
+  }
+
+  .uf-magnet > div {
+    transform: none !important;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   23. Layout for the React Bits blocks
+
+   Section 22 restyles the components themselves; these are the containers the
+   pages put them in.
+   -------------------------------------------------------------------------- */
+
+/* --- Home hero wall ----------------------------------------------------- */
+
+/* The hero is a two-column grid, so the wall is taken out of flow and pinned
+   behind both columns. */
+.hero {
+  position: relative;
+  isolation: isolate;
+}
+
+.hero-wall {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  /* Well below the copy: this is texture, and the hero has to stay readable. */
+  opacity: 0.4;
+}
+
+.hero-copy,
+.hero-panel {
+  position: relative;
+  z-index: 1;
+}
+
+/* --- Home: the "what comes back" stack ---------------------------------- */
+.reunited-section .section-head {
+  text-align: center;
+}
+
+.section-lede {
+  max-width: 46ch;
+  margin: 10px auto 0;
+  color: var(--text-secondary);
+}
+
+/* Stack fills its container, so the size has to be declared here. */
+.reunited-stack {
+  width: 260px;
+  height: 330px;
+  margin: 36px auto 0;
+}
+
+.reunited-stack img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* --- Matches: the featured pair ----------------------------------------- */
+.match-lead {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  gap: clamp(20px, 4vw, 40px);
+  align-items: center;
+  padding: 24px;
+  border-radius: var(--radius-lg);
+  background: var(--surface-raised);
+  box-shadow: var(--raise);
+}
+
+.match-lead-copy h2 {
+  margin: 8px 0 10px;
+  font-size: clamp(21px, 3vw, 29px);
+}
+
+.match-lead-copy p {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+/* --- Dashboard quick-action dock ---------------------------------------- */
+/* Dock pins its panel with position: absolute, so it needs a positioned box of
+   its own height — without one the panel escapes and floats over the page. */
+.dashboard-dock {
+  position: relative;
+  height: 78px;
+  margin-bottom: 22px;
+}
+
+@media (max-width: 899px) {
+  /* The magnification effect is driven by pointer distance, which a touch
+     screen cannot provide — and the navbar already covers these destinations. */
+  .dashboard-dock {
+    display: none;
+  }
+
+  .match-lead {
+    grid-template-columns: 1fr;
+  }
+
+  .hero-wall {
+    opacity: 0.26;
+  }
+}

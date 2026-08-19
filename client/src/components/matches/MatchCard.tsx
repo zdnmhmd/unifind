@@ -1,7 +1,10 @@
 import { Link } from "react-router-dom";
 import { ArrowRight, MessageSquare } from "lucide-react";
 import { formatDate, ITEM_PLACEHOLDER } from "@/constants";
+import SpotlightCard from "@/components/reactbits/SpotlightCard";
 import type { Match } from "@/types";
+
+const SPOTLIGHT = "rgba(233, 139, 41, 0.16)" as const;
 
 /**
  * Smart Match panel (spec sections 23 and 37).
@@ -29,7 +32,7 @@ export function MatchCard({
   ];
 
   return (
-    <article className="match-card raised">
+    <SpotlightCard className="uf-spotlight match-card raised" spotlightColor={SPOTLIGHT}>
       <header className="match-card-head">
         <div className="match-status">
           <span className="pulse-dot" aria-hidden="true" />
@@ -107,7 +110,7 @@ export function MatchCard({
           </button>
         )}
       </div>
-    </article>
+    </SpotlightCard>
   );
 }
 

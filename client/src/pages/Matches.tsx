@@ -6,6 +6,8 @@ import { messageService } from "@/services/messageService";
 import { PageHeader } from "@/components/common/PageHeader";
 import { MatchCard } from "@/components/matches/MatchCard";
 import { EmptyState, ErrorMessage, LoadingSpinner } from "@/components/common/Feedback";
+import TiltedCard from "@/components/reactbits/TiltedCard";
+import { ITEM_PLACEHOLDER } from "@/constants";
 
 /** Smart Matching results — the standout feature (spec sections 11 and 23). */
 export function Matches() {
@@ -13,6 +15,8 @@ export function Matches() {
   const navigate = useNavigate();
 
   const matches = data ?? [];
+  // The highest-scoring pair leads the page as a featured card.
+  const lead = matches[0];
 
   async function contact(itemId: number) {
     try {
@@ -24,7 +28,7 @@ export function Matches() {
   }
 
   return (
-    <div className="page">
+    <div className="page uf-tilted">
       <PageHeader
         eyebrow="RULE-BASED SMART MATCHING"
         title="Possible matches."
@@ -37,6 +41,33 @@ export function Matches() {
         <LoadingSpinner label="Comparing report details…" />
       ) : matches.length > 0 ? (
         <div className="match-list">
+          {lead && (
+            <div className="match-lead">
+              <TiltedCard
+                imageSrc={lead.matched_item.image_url || ITEM_PLACEHOLDER}
+                altText={lead.matched_item.title}
+                captionText={`${lead.score}% · POSSIBLE MATCH`}
+                containerHeight="260px"
+                containerWidth="100%"
+                imageHeight="260px"
+                imageWidth="100%"
+                rotateAmplitude={9}
+                scaleOnHover={1.04}
+                showMobileWarning={false}
+                showTooltip
+              />
+              <div className="match-lead-copy">
+                <p className="mono-label accent">STRONGEST SUGGESTION</p>
+                <h2>{lead.matched_item.title}</h2>
+                <p>
+                  Lines up with your report of <strong>{lead.own_item.title}</strong> on{" "}
+                  {lead.reasons.length} signal{lead.reasons.length === 1 ? "" : "s"}. The full
+                  evidence is below — UniFind never decides who owns an item.
+                </p>
+              </div>
+            </div>
+          )}
+
           {matches.map(match => (
             <MatchCard
               key={match.id}

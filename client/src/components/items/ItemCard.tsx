@@ -3,7 +3,12 @@ import { Link } from "react-router-dom";
 import { CalendarDays, MapPin } from "lucide-react";
 import { formatDate, ITEM_PLACEHOLDER } from "@/constants";
 import { CategoryBadge, StatusBadge, TypeBadge } from "@/components/common/StatusBadge";
+import SpotlightCard from "@/components/reactbits/SpotlightCard";
 import type { Item } from "@/types";
+
+/* The accent at low alpha, so the spotlight reads as warm light on paper rather
+   than a coloured wash over the card. */
+const SPOTLIGHT = "rgba(233, 139, 41, 0.18)" as const;
 
 /**
  * The one shared item card.
@@ -13,7 +18,7 @@ import type { Item } from "@/types";
  */
 export function ItemCard({ item, footer }: { item: Item; footer?: ReactNode }) {
   return (
-    <article className="item-card raised">
+    <SpotlightCard className="uf-spotlight item-card raised" spotlightColor={SPOTLIGHT}>
       <Link to={`/items/${item.id}`} className="item-card-link">
         <div className="item-card-image recessed">
           <img
@@ -49,6 +54,6 @@ export function ItemCard({ item, footer }: { item: Item; footer?: ReactNode }) {
       </Link>
 
       {footer && <div className="item-card-footer">{footer}</div>}
-    </article>
+    </SpotlightCard>
   );
 }

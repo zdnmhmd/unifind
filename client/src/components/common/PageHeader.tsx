@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import CountUp from "@/components/reactbits/CountUp";
 
 /** One shared page heading so no screen re-implements its own (spec section 38). */
 export function PageHeader({
@@ -70,7 +71,17 @@ export function StatCard({
     <div className={`stat-card raised ${accent ? "stat-accent" : ""}`}>
       <p className="mono-label">{label}</p>
       <strong className="stat-value">
-        {typeof value === "number" ? String(value).padStart(2, "0") : value}
+        {typeof value === "number" ? (
+          <>
+            {/* CountUp writes the raw number, which would drop the leading zero
+                the tiles are designed around. A single-digit total keeps its own
+                static "0" so "07" still reads as two monospace glyphs. */}
+            {value < 10 && <span aria-hidden="true">0</span>}
+            <CountUp to={value} duration={1.1} className="uf-countup" />
+          </>
+        ) : (
+          value
+        )}
       </strong>
       {note && <span className="stat-note">{note}</span>}
     </div>

@@ -2,8 +2,8 @@ import { useApi } from "@/hooks/useApi";
 import { itemService } from "@/services/itemService";
 import { PageHeader } from "@/components/common/PageHeader";
 import { EmptyState, ErrorMessage, SkeletonGrid } from "@/components/common/Feedback";
-import { StatusBadge } from "@/components/common/StatusBadge";
-import { formatDate, ITEM_PLACEHOLDER } from "@/constants";
+import { ITEM_PLACEHOLDER } from "@/constants";
+import Masonry from "@/components/reactbits/Masonry";
 
 /**
  * Resolved Gallery (spec section 15).
@@ -20,7 +20,7 @@ export function Resolved() {
   const items = data ?? [];
 
   return (
-    <div className="page">
+    <div className="page uf-masonry">
       <PageHeader
         eyebrow="RESOLVED GALLERY"
         title="Successfully reunited."
@@ -32,29 +32,22 @@ export function Resolved() {
       ) : loading ? (
         <SkeletonGrid count={4} />
       ) : items.length > 0 ? (
-        <div className="gallery-grid">
-          {items.map(item => (
-            <article className="gallery-card raised" key={item.id}>
-              <div className="gallery-image recessed">
-                <img
-                  src={item.image_url || ITEM_PLACEHOLDER}
-                  alt={item.title}
-                  loading="lazy"
-                  onError={event => {
-                    (event.currentTarget as HTMLImageElement).src = ITEM_PLACEHOLDER;
-                  }}
-                />
-              </div>
-              <div className="gallery-body">
-                <StatusBadge status="resolved" />
-                <h3>{item.title}</h3>
-                <p className="mono-label">
-                  SUCCESSFULLY REUNITED · {formatDate(item.updated_at).toUpperCase()}
-                </p>
-              </div>
-            </article>
-          ))}
-        </div>
+        <Masonry
+          items={items.map((item, index) => ({
+            id: String(item.id),
+            img: item.image_url || ITEM_PLACEHOLDER,
+            url: `/items/${item.id}`,
+            // Returns are a mixed bag of shapes, so the column is broken up with
+            // three repeating heights rather than a uniform grid.
+            height: [320, 420, 260][index % 3],
+          }))}
+          animateFrom="bottom"
+          scaleOnHover
+          hoverScale={0.97}
+          blurToFocus
+          duration={0.6}
+          stagger={0.06}
+        />
       ) : (
         <EmptyState
           title="No resolved cases yet."

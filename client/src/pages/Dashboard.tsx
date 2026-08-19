@@ -1,5 +1,14 @@
-import { Link } from "react-router-dom";
-import { ArrowRight, Plus, Search, Sparkles } from "lucide-react";
+import { Link, useNavigate } from "react-router-dom";
+import {
+  ArrowRight,
+  Bell,
+  MessageSquare,
+  Package,
+  Plus,
+  Search,
+  ShieldCheck,
+  Sparkles,
+} from "lucide-react";
 import { useApi } from "@/hooks/useApi";
 import { dashboardService } from "@/services/notificationService";
 import { matchService } from "@/services/matchService";
@@ -8,10 +17,13 @@ import { ItemCard } from "@/components/items/ItemCard";
 import { EmptyState, ErrorMessage, SkeletonGrid } from "@/components/common/Feedback";
 import { useAuth } from "@/context/AuthContext";
 import { formatRelative } from "@/constants";
+import Dock from "@/components/reactbits/Dock";
+import Magnet from "@/components/reactbits/Magnet";
 
 /** The member's central control hub after sign-in (spec section 18). */
 export function Dashboard() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const { data, loading, error, reload } = useApi(signal => dashboardService.get(signal), []);
   const { data: matches } = useApi(signal => matchService.list(signal), []);
 
@@ -29,9 +41,11 @@ export function Dashboard() {
         description="Here's what's moving in your corner of the network."
         actions={
           <>
-            <Link to="/report/lost" className="btn btn-primary">
-              <Plus size={16} /> Report lost item
-            </Link>
+            <Magnet padding={55} magnetStrength={7} wrapperClassName="uf-magnet">
+              <Link to="/report/lost" className="btn btn-primary">
+                <Plus size={16} /> Report lost item
+              </Link>
+            </Magnet>
             <Link to="/report/found" className="btn btn-secondary">
               <Plus size={16} /> Report found item
             </Link>
@@ -41,6 +55,27 @@ export function Dashboard() {
           </>
         }
       />
+
+      {/* Quick jumps to the six places a member actually moves between.
+          Desktop only: a magnifying dock depends on hover, which a touch screen
+          does not have, and the navbar already covers small screens. */}
+      <div className="uf-dock dashboard-dock">
+        <Dock
+          items={[
+            { icon: <Plus size={18} />, label: "Report lost", onClick: () => navigate("/report/lost") },
+            { icon: <Package size={18} />, label: "Report found", onClick: () => navigate("/report/found") },
+            { icon: <Search size={18} />, label: "Browse", onClick: () => navigate("/browse") },
+            { icon: <Sparkles size={18} />, label: "Matches", onClick: () => navigate("/matches") },
+            { icon: <ShieldCheck size={18} />, label: "Claims", onClick: () => navigate("/claims") },
+            { icon: <MessageSquare size={18} />, label: "Messages", onClick: () => navigate("/messages") },
+            { icon: <Bell size={18} />, label: "Alerts", onClick: () => navigate("/notifications") },
+          ]}
+          panelHeight={64}
+          baseItemSize={44}
+          magnification={64}
+          distance={140}
+        />
+      </div>
 
       <div className="stat-grid">
         <StatCard

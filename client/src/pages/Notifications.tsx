@@ -5,6 +5,7 @@ import { notificationService } from "@/services/notificationService";
 import { PageHeader } from "@/components/common/PageHeader";
 import { EmptyState, ErrorMessage, LoadingSpinner } from "@/components/common/Feedback";
 import { formatRelative } from "@/constants";
+import { AnimatedItem } from "@/components/reactbits/AnimatedList";
 
 const ICONS: Record<string, typeof Bell> = {
   match: Sparkles,
@@ -57,11 +58,12 @@ export function Notifications() {
       ) : loading ? (
         <LoadingSpinner label="Loading updates…" />
       ) : notifications.length > 0 ? (
-        <ul className="notification-page-list">
-          {notifications.map(notification => {
+        <ul className="notification-page-list uf-animated-list">
+          {notifications.map((notification, index) => {
             const Icon = ICONS[notification.type] ?? Bell;
             return (
               <li key={notification.id}>
+                <AnimatedItem index={index} delay={0.06}>
                 <button
                   type="button"
                   className={`notification-page-row raised ${notification.is_read ? "" : "unread"}`}
@@ -76,6 +78,7 @@ export function Notifications() {
                   </div>
                   <time className="mono-label">{formatRelative(notification.created_at)}</time>
                 </button>
+                </AnimatedItem>
               </li>
             );
           })}
