@@ -1,12 +1,14 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Eye, RotateCcw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import type { ColumnDef } from "@tanstack/react-table";
 import { useApi } from "@/hooks/useApi";
 import { adminService } from "@/services/adminService";
 import { PageHeader } from "@/components/common/PageHeader";
 import { SearchBar } from "@/components/common/SearchBar";
 import { StatusBadge, TypeBadge } from "@/components/common/StatusBadge";
+import { DataTable } from "@/components/common/DataTable";
 import { ConfirmModal } from "@/components/common/Modal";
 import { EmptyState, ErrorMessage, LoadingSpinner } from "@/components/common/Feedback";
 import { formatDate } from "@/constants";
@@ -19,15 +21,7 @@ export function ManagePosts() {
   const [pendingRemove, setPendingRemove] = useState<Item | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const posts = (data ?? []).filter(item => {
-    if (!search.trim()) return true;
-    const needle = search.trim().toLowerCase();
-    return (
-      item.title.toLowerCase().includes(needle) ||
-      item.owner_name.toLowerCase().includes(needle) ||
-      item.category.toLowerCase().includes(needle)
-    );
-  });
+  const posts = data ?? [];
 
   async function removePost() {
     if (!pendingRemove) return;
@@ -54,6 +48,85 @@ export function ManagePosts() {
     }
   }
 
+  const columns = useMemo<ColumnDef<Item, unknown>[]>(
+    () => [
+      {
+        id: "item",
+        header: "Item",
+        accessorFn: row => `${row.title} ${row.category}`,
+        cell: ({ row }) => (
+          <>
+            <Link to={`/items/${row.original.id}`} className="table-title">
+              {row.original.title}
+            </Link>
+            <span className="mono-label">{row.original.category.toUpperCase()}</span>
+          </>
+        ),
+      },
+      {
+        id: "type",
+        header: "Type",
+        accessorKey: "type",
+        cell: ({ row }) => <TypeBadge type={row.original.type} />,
+      },
+      {
+        id: "member",
+        header: "Member",
+        accessorKey: "owner_name",
+      },
+      {
+        id: "status",
+        header: "Status",
+        // Removed outranks the workflow status, so it sorts as its own value.
+        accessorFn: row => (row.is_removed ? "removed" : row.status),
+        cell: ({ row }) =>
+          row.original.is_removed ? (
+            <span className="stamp stamp-rejected">REMOVED</span>
+          ) : (
+            <StatusBadge status={row.original.status} />
+          ),
+      },
+      {
+        id: "reported",
+        header: "Reported",
+        accessorFn: row => new Date(row.created_at).getTime(),
+        cell: ({ row }) => <span className="mono-label">{formatDate(row.original.created_at)}</span>,
+      },
+      {
+        id: "actions",
+        header: "Actions",
+        enableSorting: false,
+        cell: ({ row }) => (
+          <div className="table-actions">
+            <Link to={`/items/${row.original.id}`} className="btn btn-ghost btn-sm">
+              <Eye size={14} /> View
+            </Link>
+            {row.original.is_removed ? (
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() => restorePost(row.original)}
+              >
+                <RotateCcw size={14} /> Restore
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm danger"
+                onClick={() => setPendingRemove(row.original)}
+              >
+                <Trash2 size={14} /> Remove
+              </button>
+            )}
+          </div>
+        ),
+      },
+    ],
+    // restorePost closes over `reload`, which is stable for the life of the page.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    []
+  );
+
   if (loading) return <LoadingSpinner label="Loading listings…" />;
   if (error) return <ErrorMessage message={error} onRetry={reload} />;
 
@@ -76,74 +149,19 @@ export function ManagePosts() {
 
       {posts.length === 0 ? (
         <EmptyState
-          title="No listings match that search."
-          description="Try a different item name, member, or category."
-          action="Clear search"
-          onAction={() => setSearch("")}
+          title="No listings yet."
+          description="Reports appear here as soon as members start posting."
+          action="Review the moderation queue"
+          href="/admin/reports"
         />
       ) : (
-        <div className="table-wrap raised">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th scope="col">Item</th>
-                <th scope="col">Type</th>
-                <th scope="col">Member</th>
-                <th scope="col">Status</th>
-                <th scope="col">Reported</th>
-                <th scope="col">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {posts.map(item => (
-                <tr key={item.id} className={item.is_removed ? "row-removed" : ""}>
-                  <td>
-                    <Link to={`/items/${item.id}`} className="table-title">
-                      {item.title}
-                    </Link>
-                    <span className="mono-label">{item.category.toUpperCase()}</span>
-                  </td>
-                  <td>
-                    <TypeBadge type={item.type} />
-                  </td>
-                  <td>{item.owner_name}</td>
-                  <td>
-                    {item.is_removed ? (
-                      <span className="stamp stamp-rejected">REMOVED</span>
-                    ) : (
-                      <StatusBadge status={item.status} />
-                    )}
-                  </td>
-                  <td className="mono-label">{formatDate(item.created_at)}</td>
-                  <td>
-                    <div className="table-actions">
-                      <Link to={`/items/${item.id}`} className="btn btn-ghost btn-sm">
-                        <Eye size={14} /> View
-                      </Link>
-                      {item.is_removed ? (
-                        <button
-                          type="button"
-                          className="btn btn-ghost btn-sm"
-                          onClick={() => restorePost(item)}
-                        >
-                          <RotateCcw size={14} /> Restore
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          className="btn btn-ghost btn-sm danger"
-                          onClick={() => setPendingRemove(item)}
-                        >
-                          <Trash2 size={14} /> Remove
-                        </button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <DataTable
+          columns={columns}
+          data={posts}
+          globalFilter={search}
+          rowClassName={item => (item.is_removed ? "row-removed" : "")}
+          emptyMessage="No listings match that search."
+        />
       )}
 
       {pendingRemove && (

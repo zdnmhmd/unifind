@@ -35,8 +35,28 @@
 - [x] Frontend typecheck and production build clean.
 - [x] README with setup commands, demo accounts, API reference, and the faculty demo flow.
 
+## Interface libraries
+
+- [x] React Bits: 11 more components vendored — AnimatedContent, BlurText,
+      Carousel, ChromaGrid, ClickSpark, DotGrid, FlowingMenu, GlareHover,
+      GradientText, LogoLoop, PillNav — restyled against the skeuomorphic
+      tokens from spec sections 31-37, in `index.css` section 27.
+- [x] React Hook Form + Zod on every form: report/edit, login, register, claim.
+      `client/src/lib/schemas.ts` is the single description of a valid payload.
+- [x] TanStack Table behind the admin tables, with sorting, search, and paging.
+- [x] Recharts on the admin overview: lost-against-found and the case mix.
+- [x] Admin routes lazy-loaded, keeping Recharts and TanStack Table (~450 kB)
+      off the landing page and every member screen.
+
 ## Possible next steps
 
+- [ ] Multi-photo item galleries. The user-facing ask was a photo carousel on
+      the item page, but `Item.image_url` holds exactly one photo — this needs
+      an `item_images` table, a multi-upload endpoint, and a schema change
+      before a gallery has anything to show.
+- [ ] shadcn/ui, Aceternity, and Magic UI were left out: all three are
+      Tailwind-only and this project uses a hand-written CSS system. Adopting
+      them means adding Tailwind and reworking `index.css`.
 - [ ] Let a member correct a mistyped email before confirming, instead of
       registering again.
 - [ ] Move item photos to an external image bucket instead of `backend/uploads/` (spec section 3).

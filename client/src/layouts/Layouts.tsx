@@ -1,9 +1,21 @@
-import { Link, NavLink, Outlet } from "react-router-dom";
+import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { FileWarning, LayoutDashboard, Package, Users } from "lucide-react";
 import { Navbar } from "@/components/common/Navbar";
 import { Footer } from "@/components/common/Footer";
-import { Logo } from "@/components/common/Logo";
+import { Logo, LogoMark } from "@/components/common/Logo";
 import { useAuth } from "@/context/AuthContext";
+import AnimatedContent from "@/components/reactbits/AnimatedContent";
+import PillNav from "@/components/reactbits/PillNav";
+
+/* The public shell has a short, flat nav, which is exactly what PillNav is
+   for. The authenticated Navbar keeps its own markup: it carries the
+   notification panel, the avatar, and sign-out, none of which PillNav models. */
+const PUBLIC_LINKS = [
+  { label: "Home", href: "/" },
+  { label: "How it works", href: "/#how-it-works" },
+  { label: "Categories", href: "/#categories" },
+  { label: "Privacy", href: "/#privacy" },
+];
 
 /** Home, Login, Register — the only pages a visitor can reach (spec section 6). */
 export function PublicLayout() {
@@ -13,9 +25,22 @@ export function PublicLayout() {
     <div className="public-shell">
       <header className="public-header">
         <Logo />
-        <nav>
-          <a href="#how-it-works">How it works</a>
-          <a href="#privacy">Privacy</a>
+
+        <div className="uf-pillnav public-pillnav">
+          <PillNav
+            items={PUBLIC_LINKS}
+            /* The bare mark, not <Logo>: PillNav already wraps this slot in
+               a link, and the pill logo is hidden by CSS here anyway. */
+            logoElement={<LogoMark />}
+            baseColor="var(--text-primary)"
+            pillColor="var(--surface-raised)"
+            pillTextColor="var(--text-secondary)"
+            hoveredPillTextColor="var(--surface-raised)"
+            initialLoadAnimation={false}
+          />
+        </div>
+
+        <nav className="public-nav-actions">
           {user ? (
             <Link to="/dashboard" className="btn btn-primary btn-sm">
               Go to dashboard
@@ -46,11 +71,18 @@ export function PublicLayout() {
  * confirmed, so nobody who reaches these pages has an unconfirmed address.
  */
 export function MainLayout() {
+  const { pathname } = useLocation();
+
   return (
     <div className="app-shell">
       <Navbar />
       <main className="app-main">
-        <Outlet />
+        {/* Keyed on the path so the entrance replays on every navigation, not
+            just the first mount. The distance is deliberately small — this is a
+            page settling into place, not a slide-in. */}
+        <AnimatedContent key={pathname} distance={26} duration={0.42} threshold={0}>
+          <Outlet />
+        </AnimatedContent>
       </main>
       <Footer />
     </div>
@@ -90,10 +122,20 @@ export function AdminLayout() {
           </nav>
         </aside>
         <main className="admin-main">
-          <Outlet />
+          <AdminOutlet />
         </main>
       </div>
       <Footer />
     </div>
+  );
+}
+
+/** Same page entrance as MainLayout, for the admin console. */
+function AdminOutlet() {
+  const { pathname } = useLocation();
+  return (
+    <AnimatedContent key={pathname} distance={26} duration={0.42} threshold={0}>
+      <Outlet />
+    </AnimatedContent>
   );
 }

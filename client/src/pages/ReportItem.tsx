@@ -8,6 +8,7 @@ import { useAuth } from "@/context/AuthContext";
 import { PageHeader } from "@/components/common/PageHeader";
 import { ItemForm } from "@/components/items/ItemForm";
 import { EmptyState, ErrorMessage, LoadingSpinner } from "@/components/common/Feedback";
+import ClickSpark from "@/components/reactbits/ClickSpark";
 import type { ItemType } from "@/types";
 
 /**
@@ -34,6 +35,17 @@ export function ReportItem({ mode }: { mode: ItemType }) {
   if (result) {
     return (
       <div className="page">
+        {/* The confirmation is the one genuinely celebratory moment in the
+            product, so it is the one place that sparks. The canvas sits behind
+            the panel's content and never takes a click of its own. */}
+        <ClickSpark
+          sparkColor="#e98b29"
+          sparkSize={11}
+          sparkRadius={22}
+          sparkCount={10}
+          duration={520}
+          easing="ease-out"
+        >
         <div className="success-panel raised">
           <div className="success-mark">
             <CheckCircle2 size={30} />
@@ -71,6 +83,7 @@ export function ReportItem({ mode }: { mode: ItemType }) {
             </Link>
           </div>
         </div>
+        </ClickSpark>
       </div>
     );
   }

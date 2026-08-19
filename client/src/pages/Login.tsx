@@ -1,4 +1,6 @@
-import { useState, type FormEvent } from "react";
+import { useState } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { ArrowRight, Lock } from "lucide-react";
 import { toast } from "sonner";
@@ -6,35 +8,36 @@ import { useAuth } from "@/context/AuthContext";
 import { ApiError } from "@/services/api";
 import { FieldError } from "@/components/common/Feedback";
 import { Logo } from "@/components/common/Logo";
-import { isUiuEmail, UIU_EMAIL_ERROR } from "@/constants";
+import { loginSchema, type LoginValues } from "@/lib/schemas";
 
 export function Login() {
   const { user, login } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [errors, setErrors] = useState<{ email?: string; password?: string; form?: string }>({});
-  const [submitting, setSubmitting] = useState(false);
+  // Whatever the API rejected the whole attempt with — wrong password, a
+  // suspended account. It belongs to the form, not to any one field.
+  const [formError, setFormError] = useState<string | null>(null);
+
+  const {
+    register,
+    handleSubmit,
+    formState: { errors, isSubmitting },
+  } = useForm<LoginValues>({
+    resolver: zodResolver(loginSchema),
+    mode: "onTouched",
+    defaultValues: { email: "", password: "" },
+  });
 
   // Where the member was headed before ProtectedRoute intercepted them.
   const redirectTo = (location.state as { from?: string } | null)?.from ?? "/dashboard";
 
   if (user) return <Navigate to={redirectTo} replace />;
 
-  async function handleSubmit(event: FormEvent) {
-    event.preventDefault();
-
-    const next: typeof errors = {};
-    if (!isUiuEmail(email)) next.email = UIU_EMAIL_ERROR;
-    if (!password) next.password = "Enter your password.";
-    setErrors(next);
-    if (Object.keys(next).length > 0) return;
-
-    setSubmitting(true);
+  async function submit(values: LoginValues) {
+    setFormError(null);
     try {
-      await login(email.trim(), password);
+      await login(values.email.trim(), values.password);
       toast.success("Signed in. Welcome back.");
       navigate(redirectTo, { replace: true });
     } catch (error) {
@@ -49,9 +52,7 @@ export function Login() {
         });
         return;
       }
-      setErrors({ form: (error as Error).message });
-    } finally {
-      setSubmitting(false);
+      setFormError((error as Error).message);
     }
   }
 
@@ -61,23 +62,19 @@ export function Login() {
         <Logo />
         <p className="mono-label accent">WELCOME BACK</p>
         <h1>Sign in to your space.</h1>
-        <p className="auth-lede">
-          Use your official UIU account to continue where you left off. If your email is not
-          confirmed yet, we will send you a fresh code instead.
-        </p>
+        <p className="auth-lede">Use your official UIU account to continue where you left off.</p>
 
-        <form onSubmit={handleSubmit} noValidate>
+        <form onSubmit={handleSubmit(submit)} noValidate>
           <label className="field">
             <span>UIU email</span>
             <input
               className="recessed"
               type="email"
               autoComplete="email"
-              value={email}
-              onChange={event => setEmail(event.target.value)}
               placeholder="you@bscse.uiu.ac.bd"
+              {...register("email")}
             />
-            <FieldError message={errors.email} />
+            <FieldError message={errors.email?.message} />
           </label>
 
           <label className="field">
@@ -86,17 +83,16 @@ export function Login() {
               className="recessed"
               type="password"
               autoComplete="current-password"
-              value={password}
-              onChange={event => setPassword(event.target.value)}
               placeholder="Your password"
+              {...register("password")}
             />
-            <FieldError message={errors.password} />
+            <FieldError message={errors.password?.message} />
           </label>
 
-          <FieldError message={errors.form} />
+          <FieldError message={formError} />
 
-          <button type="submit" className="btn btn-primary btn-block" disabled={submitting}>
-            {submitting ? "Signing in…" : "Sign in"} <ArrowRight size={17} />
+          <button type="submit" className="btn btn-primary btn-block" disabled={isSubmitting}>
+            {isSubmitting ? "Signing in…" : "Sign in"} <ArrowRight size={17} />
           </button>
         </form>
 

@@ -1,5 +1,7 @@
+import { lazy, Suspense } from "react";
 import { Route, Routes } from "react-router-dom";
 import { AdminLayout, MainLayout, PublicLayout } from "@/layouts/Layouts";
+import { LoadingSpinner } from "@/components/common/Feedback";
 import { AdminRoute, ProtectedRoute } from "@/components/common/ProtectedRoute";
 
 import { Home } from "@/pages/Home";
@@ -19,10 +21,22 @@ import { Profile } from "@/pages/Profile";
 import { NotFound } from "@/pages/NotFound";
 import { Verify } from "@/pages/Verify";
 
-import { AdminDashboard } from "@/pages/admin/AdminDashboard";
-import { ManagePosts } from "@/pages/admin/ManagePosts";
-import { ModerationReports } from "@/pages/admin/ModerationReports";
-import { AdminUsers } from "@/pages/admin/AdminUsers";
+/* The admin console is the only thing that pulls in Recharts and TanStack
+   Table, and almost nobody who loads UniFind is an administrator. Splitting it
+   out keeps roughly 400 kB of charting off the landing page and every member
+   screen; it arrives on the first hop into /admin instead. */
+const AdminDashboard = lazy(() =>
+  import("@/pages/admin/AdminDashboard").then(m => ({ default: m.AdminDashboard }))
+);
+const ManagePosts = lazy(() =>
+  import("@/pages/admin/ManagePosts").then(m => ({ default: m.ManagePosts }))
+);
+const ModerationReports = lazy(() =>
+  import("@/pages/admin/ModerationReports").then(m => ({ default: m.ModerationReports }))
+);
+const AdminUsers = lazy(() =>
+  import("@/pages/admin/AdminUsers").then(m => ({ default: m.AdminUsers }))
+);
 
 /** Complete route table — spec section 16. */
 export default function App() {
@@ -60,7 +74,13 @@ export default function App() {
 
         {/* Administrators only — the API enforces this independently. */}
         <Route element={<AdminRoute />}>
-          <Route element={<AdminLayout />}>
+          <Route
+            element={
+              <Suspense fallback={<LoadingSpinner label="Opening the admin console…" />}>
+                <AdminLayout />
+              </Suspense>
+            }
+          >
             <Route path="/admin" element={<AdminDashboard />} />
             <Route path="/admin/posts" element={<ManagePosts />} />
             <Route path="/admin/reports" element={<ModerationReports />} />

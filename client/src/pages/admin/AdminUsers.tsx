@@ -1,10 +1,12 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Ban, ShieldCheck, UserCheck } from "lucide-react";
 import { toast } from "sonner";
+import type { ColumnDef } from "@tanstack/react-table";
 import { useApi } from "@/hooks/useApi";
 import { adminService } from "@/services/adminService";
 import { PageHeader } from "@/components/common/PageHeader";
 import { SearchBar } from "@/components/common/SearchBar";
+import { DataTable } from "@/components/common/DataTable";
 import { ConfirmModal } from "@/components/common/Modal";
 import { EmptyState, ErrorMessage, LoadingSpinner } from "@/components/common/Feedback";
 import { formatDate } from "@/constants";
@@ -22,15 +24,83 @@ export function AdminUsers() {
   const [pending, setPending] = useState<AdminUser | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const users = (data ?? []).filter(user => {
-    if (!search.trim()) return true;
-    const needle = search.trim().toLowerCase();
-    return (
-      user.name.toLowerCase().includes(needle) ||
-      user.email.toLowerCase().includes(needle) ||
-      (user.department ?? "").toLowerCase().includes(needle)
-    );
-  });
+  const users = data ?? [];
+
+  const columns = useMemo<ColumnDef<AdminUser, unknown>[]>(
+    () => [
+      {
+        id: "member",
+        header: "Member",
+        accessorFn: row => `${row.name} ${row.email}`,
+        cell: ({ row }) => (
+          <>
+            <span className="table-title">{row.original.name}</span>
+            <span className="mono-label">{row.original.email.toUpperCase()}</span>
+          </>
+        ),
+      },
+      {
+        id: "department",
+        header: "Department",
+        accessorFn: row => row.department ?? "",
+        cell: ({ row }) => row.original.department || "—",
+      },
+      {
+        id: "role",
+        header: "Role",
+        accessorKey: "role",
+        cell: ({ row }) =>
+          row.original.role === "admin" ? (
+            <span className="stamp stamp-open">
+              <ShieldCheck size={12} /> ADMIN
+            </span>
+          ) : (
+            <span className="mono-label">MEMBER</span>
+          ),
+      },
+      {
+        id: "posts",
+        header: "Posts",
+        accessorKey: "item_count",
+        cell: ({ row }) => (
+          <span className="mono-label">{String(row.original.item_count).padStart(2, "0")}</span>
+        ),
+      },
+      {
+        id: "joined",
+        header: "Joined",
+        // Sort on the raw timestamp, display the formatted date.
+        accessorFn: row => new Date(row.created_at).getTime(),
+        cell: ({ row }) => <span className="mono-label">{formatDate(row.original.created_at)}</span>,
+      },
+      {
+        id: "actions",
+        header: "Actions",
+        enableSorting: false,
+        cell: ({ row }) =>
+          row.original.role === "admin" ? (
+            <span className="mono-label">—</span>
+          ) : (
+            <button
+              type="button"
+              className={`btn btn-ghost btn-sm ${row.original.is_suspended ? "" : "danger"}`}
+              onClick={() => setPending(row.original)}
+            >
+              {row.original.is_suspended ? (
+                <>
+                  <UserCheck size={14} /> Reinstate
+                </>
+              ) : (
+                <>
+                  <Ban size={14} /> Suspend
+                </>
+              )}
+            </button>
+          ),
+      },
+    ],
+    []
+  );
 
   async function toggleSuspension() {
     if (!pending) return;
@@ -69,69 +139,17 @@ export function AdminUsers() {
 
       {users.length === 0 ? (
         <EmptyState
-          title="No members match that search."
-          description="Try a different name, email, or department."
-          action="Clear search"
-          onAction={() => setSearch("")}
+          title="No members yet."
+          description="Accounts appear here as soon as UIU members register."
         />
       ) : (
-        <div className="table-wrap raised">
-          <table className="data-table">
-            <thead>
-              <tr>
-                <th scope="col">Member</th>
-                <th scope="col">Department</th>
-                <th scope="col">Role</th>
-                <th scope="col">Posts</th>
-                <th scope="col">Joined</th>
-                <th scope="col">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {users.map(user => (
-                <tr key={user.id} className={user.is_suspended ? "row-removed" : ""}>
-                  <td>
-                    <span className="table-title">{user.name}</span>
-                    <span className="mono-label">{user.email.toUpperCase()}</span>
-                  </td>
-                  <td>{user.department || "—"}</td>
-                  <td>
-                    {user.role === "admin" ? (
-                      <span className="stamp stamp-open">
-                        <ShieldCheck size={12} /> ADMIN
-                      </span>
-                    ) : (
-                      <span className="mono-label">MEMBER</span>
-                    )}
-                  </td>
-                  <td className="mono-label">{String(user.item_count).padStart(2, "0")}</td>
-                  <td className="mono-label">{formatDate(user.created_at)}</td>
-                  <td>
-                    {user.role === "admin" ? (
-                      <span className="mono-label">—</span>
-                    ) : (
-                      <button
-                        type="button"
-                        className={`btn btn-ghost btn-sm ${user.is_suspended ? "" : "danger"}`}
-                        onClick={() => setPending(user)}
-                      >
-                        {user.is_suspended ? (
-                          <>
-                            <UserCheck size={14} /> Reinstate
-                          </>
-                        ) : (
-                          <>
-                            <Ban size={14} /> Suspend
-                          </>
-                        )}
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <DataTable
+          columns={columns}
+          data={users}
+          globalFilter={search}
+          rowClassName={user => (user.is_suspended ? "row-removed" : "")}
+          emptyMessage="No members match that search."
+        />
       )}
 
       {pending && (

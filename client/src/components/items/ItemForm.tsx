@@ -1,16 +1,21 @@
-import { useState, type FormEvent } from "react";
+import { useEffect } from "react";
+import { useForm, Controller } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { ArrowRight } from "lucide-react";
 import { CATEGORIES, LOCATIONS, OTHER_LOCATION, toDateInputValue } from "@/constants";
+import { itemSchema, resolveLocation, type ItemValues } from "@/lib/schemas";
 import { ImageUploader } from "@/components/common/ImageUploader";
 import { FieldError } from "@/components/common/Feedback";
 import type { ItemPayload } from "@/services/itemService";
 import type { Item, ItemType } from "@/types";
 
-type Errors = Partial<Record<keyof ItemPayload, string>>;
-
 /**
  * One reusable form for /report/lost, /report/found, and /items/:id/edit
  * (spec section 21). Only the wording changes with `mode`.
+ *
+ * React Hook Form keeps the inputs uncontrolled, so typing in a long form does
+ * not re-render the whole thing, and `itemSchema` is the single description of
+ * what a valid report looks like.
  */
 export function ItemForm({
   mode,
@@ -25,75 +30,65 @@ export function ItemForm({
   submitting: boolean;
   onSubmit: (payload: ItemPayload) => Promise<void> | void;
 }) {
-  const [title, setTitle] = useState(initial?.title ?? "");
-  const [category, setCategory] = useState(initial?.category ?? "");
-  const [description, setDescription] = useState(initial?.description ?? "");
-  const [brand, setBrand] = useState(initial?.brand ?? "");
-  const [color, setColor] = useState(initial?.color ?? "");
-  const [model, setModel] = useState(initial?.model ?? "");
-  const [identifying, setIdentifying] = useState(initial?.identifying_details ?? "");
-  const [imageUrl, setImageUrl] = useState<string | null>(initial?.image_url ?? null);
-  const [date, setDate] = useState(
-    initial ? toDateInputValue(initial.date_lost_found) : toDateInputValue(new Date())
-  );
-
-  // "Other" reveals a free-text box — UniFind has no map, so location is either
-  // a known campus place or whatever the member types (spec section 7).
   const initialIsPreset = initial ? LOCATIONS.includes(initial.location as never) : true;
-  const [locationChoice, setLocationChoice] = useState(
-    initial ? (initialIsPreset ? initial.location : OTHER_LOCATION) : ""
-  );
-  const [customLocation, setCustomLocation] = useState(
-    initial && !initialIsPreset ? initial.location : ""
-  );
 
-  const [errors, setErrors] = useState<Errors>({});
+  const {
+    register,
+    handleSubmit,
+    control,
+    watch,
+    formState: { errors, isSubmitting },
+  } = useForm<ItemValues>({
+    resolver: zodResolver(itemSchema),
+    // Re-validate as the member fixes a field, but do not shout while they are
+    // still filling the form in for the first time.
+    mode: "onTouched",
+    defaultValues: {
+      title: initial?.title ?? "",
+      category: (initial?.category as ItemValues["category"]) ?? undefined,
+      description: initial?.description ?? "",
+      locationChoice: initial
+        ? ((initialIsPreset ? initial.location : OTHER_LOCATION) as ItemValues["locationChoice"])
+        : undefined,
+      customLocation: initial && !initialIsPreset ? initial.location : "",
+      date: initial ? toDateInputValue(initial.date_lost_found) : toDateInputValue(new Date()),
+      brand: initial?.brand ?? "",
+      color: initial?.color ?? "",
+      model: initial?.model ?? "",
+      identifying: initial?.identifying_details ?? "",
+      imageUrl: initial?.image_url ?? null,
+    },
+  });
 
+  const locationChoice = watch("locationChoice");
   const dateLabel = mode === "lost" ? "Date lost" : "Date found";
-  const resolvedLocation =
-    locationChoice === OTHER_LOCATION ? customLocation.trim() : locationChoice;
 
-  function validate(): Errors {
-    const next: Errors = {};
-    if (title.trim().length < 2) next.title = "Give the item a short, recognisable name.";
-    if (!category) next.category = "Choose a category.";
-    if (description.trim().length < 10) {
-      next.description = "Add at least a sentence describing the item.";
-    }
-    if (!resolvedLocation) next.location = "Choose where on campus this happened.";
-    if (!date) next.date_lost_found = "Select a date.";
-    else if (new Date(date) > new Date()) next.date_lost_found = "The date cannot be in the future.";
-    return next;
-  }
+  // Bring the first problem into view, the same way the hand-rolled version did.
+  useEffect(() => {
+    if (Object.keys(errors).length === 0) return;
+    document.querySelector(".field-error")?.scrollIntoView({ block: "center" });
+  }, [errors]);
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
-    // Validating here is for good UX; the backend validates independently.
-    const found = validate();
-    setErrors(found);
-    if (Object.keys(found).length > 0) {
-      document.querySelector(".field-error")?.scrollIntoView({ block: "center" });
-      return;
-    }
-
+  async function submit(values: ItemValues) {
     await onSubmit({
       type: mode,
-      title: title.trim(),
-      category,
-      description: description.trim(),
-      location: resolvedLocation,
-      date_lost_found: new Date(date).toISOString(),
-      image_url: imageUrl,
-      brand: brand.trim() || null,
-      color: color.trim() || null,
-      model: model.trim() || null,
-      identifying_details: identifying.trim() || null,
+      title: values.title.trim(),
+      category: values.category,
+      description: values.description.trim(),
+      location: resolveLocation(values),
+      date_lost_found: new Date(values.date).toISOString(),
+      image_url: values.imageUrl,
+      brand: values.brand?.trim() || null,
+      color: values.color?.trim() || null,
+      model: values.model?.trim() || null,
+      identifying_details: values.identifying?.trim() || null,
     });
   }
 
+  const busy = submitting || isSubmitting;
+
   return (
-    <form className="item-form" onSubmit={handleSubmit} noValidate>
+    <form className="item-form" onSubmit={handleSubmit(submit)} noValidate>
       <fieldset className="form-section raised">
         <legend>
           <span className="mono-label accent">01 / THE BASICS</span>
@@ -106,12 +101,11 @@ export function ItemForm({
           </span>
           <input
             className="recessed"
-            value={title}
             maxLength={180}
-            onChange={event => setTitle(event.target.value)}
             placeholder={mode === "lost" ? "e.g. Black iPhone 14" : "e.g. Navy blue backpack"}
+            {...register("title")}
           />
-          <FieldError message={errors.title} />
+          <FieldError message={errors.title?.message} />
         </label>
 
         <div className="field-row">
@@ -119,11 +113,7 @@ export function ItemForm({
             <span>
               Category <em>required</em>
             </span>
-            <select
-              className="recessed"
-              value={category}
-              onChange={event => setCategory(event.target.value)}
-            >
+            <select className="recessed" defaultValue="" {...register("category")}>
               <option value="">Select a category</option>
               {CATEGORIES.map(option => (
                 <option key={option} value={option}>
@@ -131,7 +121,7 @@ export function ItemForm({
                 </option>
               ))}
             </select>
-            <FieldError message={errors.category} />
+            <FieldError message={errors.category?.message} />
           </label>
 
           <label className="field">
@@ -141,11 +131,10 @@ export function ItemForm({
             <input
               className="recessed"
               type="date"
-              value={date}
               max={toDateInputValue(new Date())}
-              onChange={event => setDate(event.target.value)}
+              {...register("date")}
             />
-            <FieldError message={errors.date_lost_found} />
+            <FieldError message={errors.date?.message} />
           </label>
         </div>
 
@@ -153,11 +142,7 @@ export function ItemForm({
           <span>
             Where on campus? <em>required</em>
           </span>
-          <select
-            className="recessed"
-            value={locationChoice}
-            onChange={event => setLocationChoice(event.target.value)}
-          >
+          <select className="recessed" defaultValue="" {...register("locationChoice")}>
             <option value="">Select a location</option>
             {LOCATIONS.map(option => (
               <option key={option} value={option}>
@@ -168,13 +153,12 @@ export function ItemForm({
           {locationChoice === OTHER_LOCATION && (
             <input
               className="recessed mt-8"
-              value={customLocation}
               maxLength={180}
-              onChange={event => setCustomLocation(event.target.value)}
               placeholder="Describe the place, e.g. Bus bay near Gate 2"
+              {...register("customLocation")}
             />
           )}
-          <FieldError message={errors.location} />
+          <FieldError message={errors.locationChoice?.message ?? errors.customLocation?.message} />
         </label>
 
         <label className="field">
@@ -184,12 +168,11 @@ export function ItemForm({
           <textarea
             className="recessed"
             rows={4}
-            value={description}
             maxLength={5000}
-            onChange={event => setDescription(event.target.value)}
             placeholder="Describe it the way someone else would recognise it…"
+            {...register("description")}
           />
-          <FieldError message={errors.description} />
+          <FieldError message={errors.description?.message} />
         </label>
       </fieldset>
 
@@ -202,35 +185,17 @@ export function ItemForm({
         <div className="field-row">
           <label className="field">
             <span>Brand</span>
-            <input
-              className="recessed"
-              value={brand}
-              maxLength={100}
-              onChange={event => setBrand(event.target.value)}
-              placeholder="e.g. Samsung"
-            />
+            <input className="recessed" maxLength={100} placeholder="e.g. Samsung" {...register("brand")} />
           </label>
           <label className="field">
             <span>Color</span>
-            <input
-              className="recessed"
-              value={color}
-              maxLength={80}
-              onChange={event => setColor(event.target.value)}
-              placeholder="e.g. Black"
-            />
+            <input className="recessed" maxLength={80} placeholder="e.g. Black" {...register("color")} />
           </label>
         </div>
 
         <label className="field">
           <span>Model</span>
-          <input
-            className="recessed"
-            value={model}
-            maxLength={120}
-            onChange={event => setModel(event.target.value)}
-            placeholder="e.g. Galaxy S24"
-          />
+          <input className="recessed" maxLength={120} placeholder="e.g. Galaxy S24" {...register("model")} />
         </label>
 
         <label className="field">
@@ -240,10 +205,9 @@ export function ItemForm({
           <textarea
             className="recessed"
             rows={3}
-            value={identifying}
             maxLength={3000}
-            onChange={event => setIdentifying(event.target.value)}
             placeholder="A scratch, a sticker, what's inside… kept off the public listing."
+            {...register("identifying")}
           />
           <p className="field-hint">
             Only you can see this. Keep one or two details back so a real owner can prove the item is
@@ -257,11 +221,17 @@ export function ItemForm({
           <span className="mono-label accent">03 / PHOTO</span>
           <h2>A picture makes it recognisable.</h2>
         </legend>
-        <ImageUploader value={imageUrl} onChange={setImageUrl} />
+        {/* ImageUploader owns its own upload flow and hands back a URL, so it is
+            wired through Controller rather than a plain register(). */}
+        <Controller
+          control={control}
+          name="imageUrl"
+          render={({ field }) => <ImageUploader value={field.value} onChange={field.onChange} />}
+        />
       </fieldset>
 
-      <button type="submit" className="btn btn-primary btn-block" disabled={submitting}>
-        {submitting ? "Saving…" : submitLabel} <ArrowRight size={17} />
+      <button type="submit" className="btn btn-primary btn-block" disabled={busy}>
+        {busy ? "Saving…" : submitLabel} <ArrowRight size={17} />
       </button>
     </form>
   );

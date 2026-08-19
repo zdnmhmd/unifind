@@ -30,6 +30,10 @@ pnpm-lock.yaml
 .vscode/
 .idea/
 
+# Vendored upstream source — kept unformatted so it stays diffable against a
+# newer react-bits release. See client/src/components/reactbits/README.md.
+client/src/components/reactbits/
+
 # OS files
 .DS_Store
 Thumbs.db

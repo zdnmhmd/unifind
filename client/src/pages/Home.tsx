@@ -1,10 +1,17 @@
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { ArrowRight, HandHeart, Lock, MessagesSquare, Search, Tag } from "lucide-react";
 import { useApi } from "@/hooks/useApi";
 import { itemService } from "@/services/itemService";
+import AnimatedContent from "@/components/reactbits/AnimatedContent";
+import BlurText from "@/components/reactbits/BlurText";
+import Carousel from "@/components/reactbits/Carousel";
+import ChromaGrid from "@/components/reactbits/ChromaGrid";
 import CountUp from "@/components/reactbits/CountUp";
+import DotGrid from "@/components/reactbits/DotGrid";
 import DriftWall from "@/components/reactbits/DriftWall";
 import FadeContent from "@/components/reactbits/FadeContent";
+import GlareHover from "@/components/reactbits/GlareHover";
+import GradientText from "@/components/reactbits/GradientText";
 import Magnet from "@/components/reactbits/Magnet";
 import ScrollReveal from "@/components/reactbits/ScrollReveal";
 import ShinyText from "@/components/reactbits/ShinyText";
@@ -44,6 +51,20 @@ const STEPS = [
   },
 ];
 
+/* The eight categories from spec section 8, paired with the art already used
+   for the hero wall. Each card drops the visitor straight into Browse with the
+   category filter applied — the listings themselves stay behind sign-in. */
+const CATEGORY_CARDS = [
+  { name: "Electronics", tile: "phone", note: "Phones, laptops, chargers" },
+  { name: "Wallets", tile: "wallet", note: "Purses and card holders" },
+  { name: "Keys", tile: "keys", note: "Room, locker, and bike keys" },
+  { name: "Bags", tile: "bag", note: "Backpacks and totes" },
+  { name: "Accessories", tile: "earbuds", note: "Earbuds, watches, cables" },
+  { name: "ID Cards", tile: "id-card", note: "Student and staff IDs" },
+  { name: "Clothing", tile: "glasses", note: "Glasses, jackets, scarves" },
+  { name: "Other", tile: "bottle", note: "Bottles, umbrellas, books" },
+];
+
 /**
  * Public landing page (spec section 17).
  *
@@ -52,12 +73,28 @@ const STEPS = [
  */
 export function Home() {
   const { data: stats } = useApi(signal => itemService.publicStats(signal), []);
+  const navigate = useNavigate();
 
   return (
     <>
       <section className="hero">
         {/* Decoration only: aria-hidden, and pointer-events are off in CSS so it
-            can never swallow a click meant for the hero copy above it. */}
+            can never swallow a click meant for the hero copy above it. The dot
+            grid is the base texture and the drift wall sits over it, so the
+            hero reads as ruled paper with slips passing across. */}
+        <div className="uf-dotgrid hero-dots" aria-hidden="true">
+          <DotGrid
+            dotSize={3}
+            gap={26}
+            baseColor="#c9d1dd"
+            activeColor="#e98b29"
+            proximity={110}
+            shockRadius={190}
+            shockStrength={3}
+            returnDuration={1.4}
+          />
+        </div>
+
         <div className="uf-driftwall hero-wall" aria-hidden="true">
           <DriftWall
             items={CATEGORY_TILES}
@@ -73,9 +110,27 @@ export function Home() {
         </div>
 
         <div className="hero-copy">
-          <p className="mono-label accent">UIU LOST &amp; FOUND NETWORK</p>
-          <h1>
-            Lost something? Find it within your{" "}
+          <GradientText
+            className="uf-gradient hero-eyebrow"
+            colors={["#d1761a", "#e98b29", "#f7b96a", "#e98b29", "#d1761a"]}
+            animationSpeed={9}
+          >
+            UIU LOST &amp; FOUND NETWORK
+          </GradientText>
+
+          {/* One <h1>, two treatments. BlurText renders a <span> inside it (see
+              the reactbits README) so the opening assembles word by word, while
+              the closing phrase keeps the shine it was designed with. */}
+          <h1 className="hero-headline">
+            <BlurText
+              as="span"
+              className="uf-blurtext"
+              text="Lost something? Find it within your"
+              animateBy="words"
+              direction="top"
+              delay={90}
+              stepDuration={0.3}
+            />{" "}
             <em>
               {/* The base colour stays --accent-strong so the phrase keeps the
                   emphasis the hero was designed with; the shine is a lighter
@@ -90,6 +145,7 @@ export function Home() {
               />
             </em>
           </h1>
+
           <p className="hero-lede">
             UniFind is the private network where UIU students, faculty, and staff report lost and
             found belongings, surface possible matches, and get things back to their owners.
@@ -97,9 +153,22 @@ export function Home() {
 
           <div className="hero-actions">
             <Magnet padding={70} magnetStrength={6} wrapperClassName="uf-magnet">
-              <Link to="/login" className="btn btn-primary btn-lg">
-                Sign in with UIU email <ArrowRight size={18} />
-              </Link>
+              <GlareHover
+                className="uf-glare"
+                width="auto"
+                height="auto"
+                background="transparent"
+                borderRadius="var(--radius)"
+                glareColor="#ffffff"
+                glareOpacity={0.45}
+                glareAngle={-38}
+                glareSize={220}
+                transitionDuration={720}
+              >
+                <Link to="/login" className="btn btn-primary btn-lg">
+                  Sign in with UIU email <ArrowRight size={18} />
+                </Link>
+              </GlareHover>
             </Magnet>
             <Link to="/register" className="btn btn-secondary btn-lg">
               Create account
@@ -180,6 +249,55 @@ export function Home() {
             </FadeContent>
           ))}
         </div>
+
+        {/* Below 900px the four-column grid above is hidden and the same steps
+            become a draggable carousel — four stacked cards would otherwise
+            push the rest of the page off the first screen. */}
+        <div className="uf-carousel step-carousel">
+          <Carousel
+            baseWidth={320}
+            autoplay
+            autoplayDelay={4200}
+            pauseOnHover
+            loop
+            items={STEPS.map(({ number, icon: Icon, title, body }, index) => ({
+              id: index,
+              title: `${number} · ${title}`,
+              description: body,
+              icon: <Icon size={15} />,
+            }))}
+          />
+        </div>
+      </section>
+
+      <section className="section categories-section" id="categories">
+        <header className="section-head">
+          <p className="mono-label accent">BY CATEGORY</p>
+          <h2>What goes missing on campus.</h2>
+          <p className="section-lede">
+            Pick a category to jump straight into a filtered search. The listings themselves stay
+            private until you sign in.
+          </p>
+        </header>
+
+        <AnimatedContent distance={60} duration={0.7} threshold={0.2}>
+          <div className="uf-chroma category-chroma">
+            <ChromaGrid
+              radius={260}
+              damping={0.4}
+              fadeOut={0.55}
+              onSelect={item => navigate(`/browse?category=${encodeURIComponent(item.title)}`)}
+              items={CATEGORY_CARDS.map(({ name, tile, note }) => ({
+                image: `/categories/${tile}.svg`,
+                title: name,
+                subtitle: note,
+                handle: "BROWSE →",
+                borderColor: "#e98b29",
+                gradient: "linear-gradient(160deg, #f0f2f5, #d1d9e6)",
+              }))}
+            />
+          </div>
+        </AnimatedContent>
       </section>
 
       <section className="section reunited-section">

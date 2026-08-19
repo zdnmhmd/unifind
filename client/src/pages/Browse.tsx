@@ -1,5 +1,7 @@
 import { useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import { LayoutGrid } from "lucide-react";
+import { CATEGORIES } from "@/constants";
 import { useApi } from "@/hooks/useApi";
 import { itemService } from "@/services/itemService";
 import { PageHeader } from "@/components/common/PageHeader";
@@ -10,6 +12,22 @@ import { EmptyState, ErrorMessage, SkeletonGrid } from "@/components/common/Feed
 import { useDebounced } from "@/hooks/useDebounced";
 import type { ItemFilters, ItemStatus, ItemType, SortOrder } from "@/types";
 import FadeContent from "@/components/reactbits/FadeContent";
+import FlowingMenu from "@/components/reactbits/FlowingMenu";
+
+/* The eight spec categories, paired with the art already shipped for the
+   landing page. The menu is a second way into the same `category` filter the
+   FilterPanel select drives, so both stay in step through the URL. */
+const CATEGORY_ART: Record<string, string> = {
+  Electronics: "phone",
+  "ID Cards": "id-card",
+  Keys: "keys",
+  Bags: "bag",
+  Wallets: "wallet",
+  Clothing: "glasses",
+  Documents: "id-card",
+  Accessories: "earbuds",
+  Other: "bottle",
+};
 
 /**
  * Browse, search, filter and sort — FEATURE 2 (spec section 19).
@@ -19,6 +37,7 @@ import FadeContent from "@/components/reactbits/FadeContent";
  */
 export function Browse() {
   const [params, setParams] = useSearchParams();
+  const [categoriesOpen, setCategoriesOpen] = useState(false);
   const [search, setSearch] = useState(params.get("search") ?? "");
 
   // Wait for a pause in typing before hitting the API on every keystroke.
@@ -81,7 +100,35 @@ export function Browse() {
           }}
         />
         <FilterPanel filters={filters} onChange={updateFilters} onReset={resetFilters} />
+        <button
+          type="button"
+          className={`btn btn-ghost btn-sm ${categoriesOpen ? "active" : ""}`}
+          onClick={() => setCategoriesOpen(open => !open)}
+          aria-expanded={categoriesOpen}
+          aria-controls="category-menu"
+        >
+          <LayoutGrid size={15} /> Categories
+        </button>
       </div>
+
+      {/* Collapsed by default so it never pushes the results below the fold.
+          Selecting a category writes the same `category` param the select uses,
+          then closes the panel and lets the existing query re-run. */}
+      {categoriesOpen && (
+        <div className="uf-flowingmenu category-menu" id="category-menu">
+          <FlowingMenu
+            items={CATEGORIES.map(category => ({
+              link: `/browse?category=${encodeURIComponent(category)}`,
+              text: category,
+              image: `/categories/${CATEGORY_ART[category] ?? "bottle"}.svg`,
+              onSelect: () => {
+                updateFilters({ category });
+                setCategoriesOpen(false);
+              },
+            }))}
+          />
+        </div>
+      )}
 
       <div className="results-bar mono-label">
         <span>
